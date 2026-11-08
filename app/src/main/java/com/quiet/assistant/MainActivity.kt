@@ -43,6 +43,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private var wakeMode = false
     private var wakeOnly = false
     private var apiKey = ""
+    private var openRouterKey = ""
 
     private val executor = Executors.newSingleThreadExecutor()
     private val history = mutableListOf<Pair<String, String>>()
@@ -53,11 +54,13 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         tts = TextToSpeech(this, this)
         apiKey = getSharedPreferences("quiet_settings", MODE_PRIVATE)
             .getString("gemini_key", "") ?: ""
+        openRouterKey = getSharedPreferences("quiet_settings", MODE_PRIVATE)
+            .getString("openrouter_key", "") ?: ""
 
         createInterface()
         createSpeechRecognizer()
 
-        if (apiKey.isBlank()) {
+        if (apiKey.isBlank() && openRouterKey.isBlank()) {
             showApiKeyDialog()
         }
     }
@@ -214,7 +217,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         })
 
         val settingsButton = Button(this).apply {
-            text = "Настройки Gemini"
+            text = "Настройки ИИ"
             isAllCaps = false
             textSize = 11f
             minHeight = 0
@@ -228,46 +231,47 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     }
 
     private fun showApiKeyDialog() {
-        val input = EditText(this).apply {
-            hint = "Вставь свой Gemini API key"
-            inputType = InputType.TYPE_CLASS_TEXT or
-                InputType.TYPE_TEXT_VARIATION_PASSWORD
+        val geminiInput = EditText(this).apply {
+            hint = "Gemini API key (основной)"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
             setText(apiKey)
         }
-
-        val container = LinearLayout(this).apply {
-            setPadding(24, 8, 24, 0)
-            addView(input)
+        val routerInput = EditText(this).apply {
+            hint = "OpenRouter API key (резервный)"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            setText(openRouterKey)
         }
-
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(24, 8, 24, 0)
+            addView(geminiInput)
+            addView(routerInput)
+        }
         val dialog = AlertDialog.Builder(this)
-            .setTitle("Подключение Gemini")
-            .setMessage("Введи API-ключ из Google AI Studio. Он сохранится на телефоне.")
+            .setTitle("Настройки ИИ")
+            .setMessage("Gemini работает первым. Если он недоступен, Quiet попробует OpenRouter. Достаточно указать хотя бы один ключ.")
             .setView(container)
             .setPositiveButton("Сохранить", null)
             .setNegativeButton("Отмена", null)
             .create()
-
         dialog.setOnShowListener {
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                val key = input.text.toString().trim()
-
-                if (key.isBlank()) {
-                    input.error = "Введи API-ключ"
+                val gemini = geminiInput.text.toString().trim()
+                val router = routerInput.text.toString().trim()
+                if (gemini.isBlank() && router.isBlank()) {
+                    geminiInput.error = "Укажи хотя бы один API-ключ"
                     return@setOnClickListener
                 }
-
-                apiKey = key
-                getSharedPreferences("quiet_settings", MODE_PRIVATE)
-                    .edit()
-                    .putString("gemini_key", key)
+                apiKey = gemini
+                openRouterKey = router
+                getSharedPreferences("quiet_settings", MODE_PRIVATE).edit()
+                    .putString("gemini_key", gemini)
+                    .putString("openrouter_key", router)
                     .apply()
-
-                status.text = "Gemini подключён. Можешь говорить!"
+                status.text = "Настройки ИИ сохранены."
                 dialog.dismiss()
             }
         }
-
         dialog.show()
     }
 
@@ -399,7 +403,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             return
         }
 
-        if (apiKey.isBlank()) {
+        if (apiKey.isBlank() && openRouterKey.isBlank()) {
             showApiKeyDialog()
             return
         }
@@ -409,7 +413,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
         executor.execute {
             try {
-                val answer = requestGemini(question)
+                val answer = requestAssistant(question)
 
                 runOnUiThread {
                     history.add(question to answer)
@@ -558,6 +562,70 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             }
             throw Exception("Gemini не вернул аудио")
         } finally { connection.disconnect() }
+    }
+
+    private fun requestAssistant(question: String): String {
+        var geminiFailure: Exception? = null
+        if (apiKey.isNotBlank()) {
+            try {
+                return requestGemini(question)
+            } catch (e: Exception) {
+                geminiFailure = e
+            }
+        }
+        if (openRouterKey.isNotBlank()) {
+            try {
+                return requestOpenRouter(question)
+            } catch (e: Exception) {
+                throw Exception("Gemini: ${geminiFailure?.message ?: "ключ не задан"}. OpenRouter: ${e.message}")
+            }
+        }
+        throw geminiFailure ?: Exception("Добавь ключ Gemini или OpenRouter в настройках.")
+    }
+
+    private fun requestOpenRouter(question: String): String {
+        val connection = URL("https://openrouter.ai/api/v1/chat/completions").openConnection() as HttpURLConnection
+        try {
+            connection.requestMethod = "POST"
+            connection.connectTimeout = 12000
+            connection.readTimeout = 45000
+            connection.doOutput = true
+            connection.setRequestProperty("Content-Type", "application/json; charset=UTF-8")
+            connection.setRequestProperty("Authorization", "Bearer $openRouterKey")
+            connection.setRequestProperty("HTTP-Referer", "https://github.com/laggerlagger97-alt/Quiet")
+            connection.setRequestProperty("X-Title", "Quiet Assistant")
+            val messages = JSONArray()
+            messages.put(JSONObject().put("role", "system").put("content",
+                "Тебя зовут Quiet. Ты дружелюбный голосовой помощник. Отвечай на русском языке, ясно и естественно."))
+            for ((oldQuestion, oldAnswer) in history.takeLast(8)) {
+                messages.put(JSONObject().put("role", "user").put("content", oldQuestion))
+                messages.put(JSONObject().put("role", "assistant").put("content", oldAnswer))
+            }
+            messages.put(JSONObject().put("role", "user").put("content", question))
+            val body = JSONObject()
+                .put("model", "openrouter/free")
+                .put("messages", messages)
+                .put("max_tokens", 500)
+            connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+            val code = connection.responseCode
+            val stream = if (code in 200..299) connection.inputStream else connection.errorStream
+            val raw = stream.bufferedReader().use { it.readText() }
+            if (code !in 200..299) {
+                throw Exception("HTTP $code: " + try {
+                    JSONObject(raw).optJSONObject("error")?.optString("message", raw) ?: raw
+                } catch (_: Exception) { raw.take(300) })
+            }
+            val choices = JSONObject(raw).optJSONArray("choices")
+                ?: throw Exception("OpenRouter не вернул список ответов.")
+            if (choices.length() == 0) throw Exception("OpenRouter не вернул вариантов ответа.")
+            val message = choices.getJSONObject(0).optJSONObject("message")
+                ?: throw Exception("В ответе OpenRouter нет сообщения.")
+            val content = message.optString("content", "").trim()
+            if (content.isBlank()) throw Exception("OpenRouter вернул пустой ответ.")
+            return content
+        } finally {
+            connection.disconnect()
+        }
     }
 
     private fun requestGemini(question: String): String {
