@@ -632,6 +632,8 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                     )
                 )))
                 .put("contents", contents)
+                // Gemini decides when live Google Search is useful, then grounds its answer.
+                .put("tools", JSONArray().put(JSONObject().put("google_search", JSONObject())))
                 .put("generationConfig", JSONObject()
                     .put("temperature", 0.7)
                     .put("maxOutputTokens", 500))
