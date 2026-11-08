@@ -603,7 +603,9 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
     override fun onInit(statusCode: Int) {
         if (statusCode == TextToSpeech.SUCCESS) {
-            tts?.setLanguage(Locale("ru", "RU"))\n            tts?.setSpeechRate(0.94f)\n            tts?.setPitch(1.0f)\n            val result = tts?.setLanguage(Locale("ru", "RU"))
+            val result = tts?.setLanguage(Locale("ru", "RU"))
+            tts?.setSpeechRate(0.94f)
+            tts?.setPitch(1.0f)
             if (result == TextToSpeech.LANG_MISSING_DATA ||
                 result == TextToSpeech.LANG_NOT_SUPPORTED
             ) {
