@@ -25,6 +25,7 @@ import android.widget.TextView
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
+import java.net.SocketTimeoutException
 import java.net.URL
 import java.util.Locale
 import java.util.concurrent.Executors
@@ -452,8 +453,8 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         val connection = url.openConnection() as HttpURLConnection
         try {
             connection.requestMethod = "POST"
-            connection.connectTimeout = 20000
-            connection.readTimeout = 60000
+            connection.connectTimeout = 30000
+            connection.readTimeout = 90000
             connection.doOutput = true
             connection.setRequestProperty("Content-Type", "application/json; charset=UTF-8")
             connection.setRequestProperty("x-goog-api-key", apiKey)
@@ -478,18 +479,19 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     }
 
     private fun requestGemini(question: String): String {
-        val models = listOf("gemini-3.8-flash", "gemini-3.8-flash-lite")
+        val models = listOf("gemini-3.8-flash", "gemini-3.5-flash-lite")
         var lastError: Exception? = null
 
         for ((modelIndex, model) in models.withIndex()) {
-            val attempts = if (modelIndex == 0) 3 else 1
+            val attempts = 2
             for (attempt in 0 until attempts) {
                 try {
                     return requestGeminiWithModel(question, model)
                 } catch (e: Exception) {
                     lastError = e
                     val message = e.message.orEmpty().lowercase(Locale.ROOT)
-                    val temporary = message.contains("high demand") ||
+                    val temporary = e is SocketTimeoutException || message.contains("timeout") ||
+                        message.contains("high demand") ||
                         message.contains("overloaded") ||
                         message.contains("unavailable") ||
                         message.contains("temporarily") ||
@@ -501,7 +503,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                         message.contains("http 504")
                     if (!temporary) throw e
                     if (attempt < attempts - 1) {
-                        Thread.sleep(1500L * (attempt + 1))
+                        Thread.sleep(1200L * (attempt + 1))
                     }
                 }
             }
