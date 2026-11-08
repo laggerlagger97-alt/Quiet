@@ -63,9 +63,10 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         createInterface()
         createSpeechRecognizer()
 
-        if (apiKey.isBlank() && openRouterKey.isBlank()) {
+        if (apiKey.isBlank() && openRouterKey.isBlank() && groqKey.isBlank()) {
             showApiKeyDialog()
         }
+        handleWakeIntent(intent)
     }
 
     private fun createInterface() {
@@ -299,14 +300,21 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
-        if (intent?.action == "com.quiet.assistant.WAKE") {
-            // Keep background mode enabled; Vosk is restarted after the answer.
-            wakeMode = true
-            wakeOnly = false
-            status.text = "Слушаю тебя. Задай вопрос."
-            talkButton.text = "🎙  Включить Quiet"
-            android.os.Handler(mainLooper).postDelayed({ startListening() }, 1200)
-        }
+        setIntent(intent)
+        handleWakeIntent(intent)
+    }
+
+    private fun handleWakeIntent(intent: Intent?) {
+        if (intent?.action != "com.quiet.assistant.WAKE") return
+        wakeMode = true
+        wakeOnly = false
+        wakeButton.text = "⏹  Выключить фоновый режим"
+        status.text = "Слышу тебя. Говори после сигнала."
+        talkButton.text = "🎙  Включить Quiet"
+        // Give Vosk foreground service time to release the microphone before Android speech recognition starts.
+        android.os.Handler(mainLooper).postDelayed({
+            if (!isFinishing && wakeMode && !isListening) startListening()
+        }, 1800)
     }
 
     private fun createSpeechRecognizer() {
