@@ -171,7 +171,19 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             setTextColor(white)
             background = rounded(accent, 22f)
             setOnClickListener {
-                if (isListening) stopListening() else startListening()
+                if (wakeMode) {
+                    stopService(Intent(this@MainActivity, WakeWordService::class.java))
+                    wakeMode = false
+                    talkButton.text = "🎙  Включить Quiet"
+                    status.text = "Фоновое пробуждение выключено"
+                } else if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                    requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 101)
+                } else {
+                    wakeMode = true
+                    startForegroundService(Intent(this@MainActivity, WakeWordService::class.java))
+                    talkButton.text = "⏹  Выключить Quiet"
+                    status.text = "Quiet ждёт ключевое слово в фоне"
+                }
             }
         }
 
@@ -236,6 +248,17 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         }
 
         dialog.show()
+    }
+
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        if (intent?.action == "com.quiet.assistant.WAKE") {
+            wakeMode = false
+            tts?.speak("Слушаю", TextToSpeech.QUEUE_FLUSH, null, "quiet_wake")
+            status.text = "Слушаю тебя. Задай вопрос."
+            talkButton.text = "🎙  Включить Quiet"
+            android.os.Handler(mainLooper).postDelayed({ startListening() }, 900)
+        }
     }
 
     private fun createSpeechRecognizer() {
