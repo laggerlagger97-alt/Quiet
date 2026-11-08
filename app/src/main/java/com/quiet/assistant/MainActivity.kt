@@ -490,7 +490,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private fun requestGemini(question: String): String {
         val url = URL(
             "https://generativelanguage.googleapis.com/v1beta/" +
-                "models/gemini-2.5-flash:generateContent"
+                "models/gemini-3.8-flash:generateContent"
         )
 
         val connection = url.openConnection() as HttpURLConnection
