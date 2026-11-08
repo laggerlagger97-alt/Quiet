@@ -479,7 +479,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     }
 
     private fun requestGemini(question: String): String {
-        val models = listOf("gemini-3.8-flash", "gemini-3.5-flash-lite")
+        val models = listOf("gemini-3.8-flash", "gemini-3.5-flash")
         var lastError: Exception? = null
 
         for ((modelIndex, model) in models.withIndex()) {
@@ -509,10 +509,19 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             }
         }
 
-        throw Exception(
-            "Сейчас сервисы Gemini перегружены. Попробуй ещё раз через минуту. " +
-                (lastError?.message ?: "")
-        )
+        val detail = lastError?.message.orEmpty()
+        if (detail.contains("UnknownHost", ignoreCase = true) ||
+            detail.contains("Unable to resolve host", ignoreCase = true) ||
+            detail.contains("No address associated with hostname", ignoreCase = true)
+        ) {
+            throw Exception("Телефон не может найти сервер Gemini. Проверь интернет, отключи VPN или частный DNS и попробуй снова.")
+        }
+        if (detail.contains("timeout", ignoreCase = true) ||
+            detail.contains("timed out", ignoreCase = true)
+        ) {
+            throw Exception("Gemini не ответил вовремя. Проверь соединение и повтори запрос.")
+        }
+        throw Exception("Gemini временно недоступен. Попробуй ещё раз. $detail")
     }
 
     private fun requestGeminiWithModel(question: String, model: String): String {
