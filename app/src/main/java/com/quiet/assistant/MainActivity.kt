@@ -55,74 +55,136 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     }
 
     private fun createInterface() {
+        val bg = 0xFF0B1020.toInt()
+        val panel = 0xFF151D33.toInt()
+        val accent = 0xFF8B7CFF.toInt()
+        val muted = 0xFF9AA6C4.toInt()
+        val white = 0xFFF5F7FF.toInt()
+
+        fun rounded(color: Int, radius: Float) =
+            android.graphics.drawable.GradientDrawable().apply {
+                setColor(color)
+                cornerRadius = radius
+            }
+
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(24, 24, 24, 24)
+            setPadding(22, 28, 22, 22)
+            setBackgroundColor(bg)
         }
 
-        val title = TextView(this).apply {
-            text = "Quiet"
-            textSize = 36f
-            gravity = Gravity.CENTER
+        val top = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
         }
-
-        val subtitle = TextView(this).apply {
-            text = "Твой голосовой ИИ-помощник"
-            textSize = 17f
+        val brand = TextView(this).apply {
+            text = "quiet."
+            textSize = 32f
+            setTextColor(white)
+            typeface = android.graphics.Typeface.create("sans-serif", android.graphics.Typeface.BOLD)
+        }
+        val live = TextView(this).apply {
+            text = "● AI ASSISTANT"
+            textSize = 10f
+            setTextColor(0xFF9D91FF.toInt())
             gravity = Gravity.CENTER
+            setPadding(12, 8, 12, 8)
+            background = rounded(0xFF252344.toInt(), 40f)
+        }
+        top.addView(brand, LinearLayout.LayoutParams(0, -2, 1f))
+        top.addView(live)
+
+        val greeting = TextView(this).apply {
+            text = "Твой голос.\nТвой помощник."
+            textSize = 29f
+            setTextColor(white)
+            typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+            setPadding(0, 30, 0, 6)
+        }
+        val hint = TextView(this).apply {
+            text = "Скажи «Quiet» или нажми кнопку, чтобы начать"
+            textSize = 14f
+            setTextColor(muted)
+            setPadding(0, 0, 0, 22)
         }
 
         status = TextView(this).apply {
-            text = "Нажми «Поговорить» и задай вопрос"
-            textSize = 16f
+            text = "Я рядом. Готов помочь."
+            textSize = 14f
+            setTextColor(0xFFD7D3FF.toInt())
             gravity = Gravity.CENTER
-            setPadding(0, 20, 0, 16)
+            setPadding(14, 16, 14, 16)
+            background = rounded(panel, 22f)
+        }
+
+        val orb = TextView(this).apply {
+            text = "✦"
+            textSize = 54f
+            gravity = Gravity.CENTER
+            setTextColor(white)
+            background = android.graphics.drawable.GradientDrawable(
+                android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
+                intArrayOf(0xFF8D7CFF.toInt(), 0xFF5145B8.toInt())
+            ).apply {
+                shape = android.graphics.drawable.GradientDrawable.OVAL
+                setStroke(2, 0xFFB6ADFF.toInt())
+            }
+            elevation = 12f
+        }
+        val orbWrap = LinearLayout(this).apply {
+            gravity = Gravity.CENTER
+            setPadding(0, 22, 0, 18)
+            addView(orb, LinearLayout.LayoutParams(116, 116))
         }
 
         conversationView = TextView(this).apply {
-            text = "Здесь появятся наши разговоры."
-            textSize = 16f
-            setPadding(12, 12, 12, 12)
+            text = "Здесь появится наша беседа.\n\nМожешь спросить меня о чём угодно."
+            textSize = 15f
+            setTextColor(white)
+            setLineSpacing(5f, 1f)
+            setPadding(18, 18, 18, 18)
         }
-
         val scroll = ScrollView(this).apply {
-            addView(
-                conversationView,
-                ViewGroup.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT
-                )
-            )
+            background = rounded(panel, 22f)
+            clipToOutline = true
+            addView(conversationView)
         }
 
         val settingsButton = Button(this).apply {
-            text = "Настроить Gemini API"
+            text = "Настройки Gemini"
+            isAllCaps = false
+            textSize = 14f
+            setTextColor(0xFFDCD8FF.toInt())
+            background = rounded(0xFF252344.toInt(), 18f)
             setOnClickListener { showApiKeyDialog() }
         }
-
         talkButton = Button(this).apply {
-            text = "Поговорить"
-            textSize = 18f
+            text = "🎙  Поговорить"
+            textSize = 17f
+            isAllCaps = false
+            setTextColor(white)
+            background = rounded(accent, 22f)
             setOnClickListener {
                 if (isListening) stopListening() else startListening()
             }
         }
 
-        root.addView(title)
-        root.addView(subtitle)
+        root.addView(top)
+        root.addView(greeting)
+        root.addView(hint)
         root.addView(status)
+        root.addView(orbWrap)
         root.addView(
             scroll,
-            LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                0,
-                1f
-            )
+            LinearLayout.LayoutParams(-1, 0, 1f).apply {
+                bottomMargin = 16
+            }
         )
-        root.addView(settingsButton)
-        root.addView(talkButton)
-
+        root.addView(
+            talkButton,
+            LinearLayout.LayoutParams(-1, 58).apply { bottomMargin = 10 }
+        )
+        root.addView(settingsButton, LinearLayout.LayoutParams(-1, 48))
         setContentView(root)
     }
 
