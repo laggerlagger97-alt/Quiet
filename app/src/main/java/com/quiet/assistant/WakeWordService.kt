@@ -33,6 +33,7 @@ class WakeWordService : Service() {
         if (Build.VERSION.SDK_INT >= 29) {
             startForeground(41, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
         } else startForeground(41, notification)
+        running = true
         startRecognition()
     }
 
