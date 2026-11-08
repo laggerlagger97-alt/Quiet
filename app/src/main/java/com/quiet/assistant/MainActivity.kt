@@ -282,11 +282,13 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
         if (intent?.action == "com.quiet.assistant.WAKE") {
-            wakeMode = false
+            // Keep background mode enabled; Vosk is restarted after the answer.
+            wakeMode = true
+            wakeOnly = false
             speakAnswer("Слушаю")
             status.text = "Слушаю тебя. Задай вопрос."
             talkButton.text = "🎙  Включить Quiet"
-            android.os.Handler(mainLooper).postDelayed({ startListening() }, 900)
+            android.os.Handler(mainLooper).postDelayed({ startListening() }, 1200)
         }
     }
 
@@ -348,7 +350,11 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         if (!wakeMode || isFinishing) return
         wakeOnly = true
         status.text = "Quiet активен. Скажи «Quiet»"
-        startListening()
+        try {
+            startForegroundService(Intent(this, WakeWordService::class.java))
+        } catch (e: Exception) {
+            status.text = "Не удалось запустить фоновое пробуждение: " + (e.message ?: "проверь разрешение микрофона")
+        }
     }
 
     private fun startListening() {
