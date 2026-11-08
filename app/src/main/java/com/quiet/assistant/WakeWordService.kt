@@ -2,19 +2,31 @@ package com.quiet.assistant
 
 import android.app.*
 import android.content.Intent
+import android.media.AudioFormat
+import android.media.AudioRecord
+import android.media.MediaRecorder
 import android.os.Build
-import android.os.Bundle
 import android.os.IBinder
-import android.speech.RecognitionListener
-import android.speech.RecognizerIntent
-import android.speech.SpeechRecognizer
 import android.util.Log
+import org.json.JSONObject
+import org.vosk.Model
+import org.vosk.Recognizer
+import java.io.BufferedInputStream
+import java.io.File
+import java.io.FileOutputStream
+import java.net.URL
 import java.util.Locale
+import java.util.concurrent.Executors
+import java.util.zip.ZipInputStream
 
 class WakeWordService : Service() {
-    private var recognizer: SpeechRecognizer? = null
-    private var running = false
+    @Volatile private var running = false
+    @Volatile private var triggered = false
     private val channelId = "quiet_wake"
+    private val worker = Executors.newSingleThreadExecutor()
+    private var audioRecord: AudioRecord? = null
+    private var model: Model? = null
+    private var recognizer: Recognizer? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -25,8 +37,8 @@ class WakeWordService : Service() {
         }, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val notification = Notification.Builder(this, channelId)
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
-            .setContentTitle("Quiet слушает")
-            .setContentText("Скажи «Quiet», чтобы вызвать помощника")
+            .setContentTitle("Quiet — офлайн-пробуждение")
+            .setContentText("Подготавливаю русский детектор…")
             .setOngoing(true)
             .setContentIntent(open)
             .build()
@@ -34,71 +46,121 @@ class WakeWordService : Service() {
             startForeground(41, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
         } else startForeground(41, notification)
         running = true
-        startRecognition()
+        worker.execute { prepareAndListen() }
     }
 
     private fun createChannel() {
         if (Build.VERSION.SDK_INT >= 26) {
-            val channel = NotificationChannel(channelId, "Фоновое пробуждение Quiet", NotificationManager.IMPORTANCE_LOW)
+            val channel = NotificationChannel(channelId, "Офлайн-пробуждение Quiet", NotificationManager.IMPORTANCE_LOW)
             getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
         }
     }
 
-    private fun startRecognition() {
-        if (!running || !SpeechRecognizer.isRecognitionAvailable(this)) return
+    private fun updateNotification(message: String) {
+        val notification = Notification.Builder(this, channelId)
+            .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+            .setContentTitle("Quiet — офлайн-пробуждение")
+            .setContentText(message)
+            .setOngoing(true)
+            .build()
+        getSystemService(NotificationManager::class.java).notify(41, notification)
+    }
+
+    private fun prepareAndListen() {
         try {
-            recognizer?.destroy()
-            recognizer = SpeechRecognizer.createSpeechRecognizer(this).apply {
-                setRecognitionListener(object : RecognitionListener {
-                    override fun onReadyForSpeech(params: Bundle?) {}
-                    override fun onBeginningOfSpeech() {}
-                    override fun onRmsChanged(rmsdB: Float) {}
-                    override fun onBufferReceived(buffer: ByteArray?) {}
-                    override fun onEndOfSpeech() {}
-                    override fun onEvent(eventType: Int, params: Bundle?) {}
-                    override fun onPartialResults(partialResults: Bundle?) {}
-                    override fun onResults(results: Bundle?) {
-                        val phrase = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty()
-                        val normalized = phrase.lowercase(Locale("ru", "RU"))
-                            .replace("ё", "е")
-                            .replace(Regex("[^\\p{L}\\p{N}]+"), " ")
-                            .trim()
-                        val wakeWords = listOf(
-                            "quiet", "куаит", "куайт", "кьют", "квиет",
-                            "квайет", "квайт", "квейт", "кваит", "квеет",
-                            "ква йет", "квай"
-                        )
-                        val tokens = normalized.split(Regex("\\s+"))
-                        if (wakeWords.any { word ->
-                                normalized.contains(word) || tokens.any { token ->
-                                    token == word || (word.length >= 5 && levenshtein(token, word) <= 1)
-                                }
-                            }) {
-                            val intent = Intent(this@WakeWordService, MainActivity::class.java).apply {
-                                action = "com.quiet.assistant.WAKE"
-                                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
-                            }
-                            startActivity(intent)
-                            stopSelf()
-                        } else restartSoon()
-                    }
-                    override fun onError(error: Int) { restartSoon() }
-                })
+            val modelDir = File(filesDir, "vosk-model-small-ru-0.22")
+            if (!File(modelDir, "am/final.mdl").exists()) {
+                updateNotification("Загружаю русскую модель (около 45 МБ)…")
+                val archive = File(cacheDir, "vosk-ru.zip")
+                URL("https://alphacephei.com/vosk/models/vosk-model-small-ru-0.22.zip").openConnection().apply {
+                    connectTimeout = 20000
+                    readTimeout = 120000
+                }.getInputStream().use { input ->
+                    FileOutputStream(archive).use { output -> input.copyTo(output) }
+                }
+                updateNotification("Распаковываю офлайн-модель…")
+                unzipSafely(archive, filesDir)
+                archive.delete()
             }
-            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ru-RU")
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "ru-RU")
-                putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
-                putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-                putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, false)
-                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1000L)
-                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 700L)
-            }
-            recognizer?.startListening(intent)
+            if (!running) return
+            updateNotification("Модель готова. Скажи «Квайет»")
+            model = Model(modelDir.absolutePath)
+            recognizer = Recognizer(model, 16000.0f)
+            listenLoop()
         } catch (e: Exception) {
-            Log.e("QuietWake", "Recognition start failed", e)
-            restartSoon()
+            Log.e("QuietWake", "Offline detector failed", e)
+            updateNotification("Ошибка офлайн-детектора. Открой Quiet и попробуй снова.")
+            stopSelf()
+        }
+    }
+
+    private fun unzipSafely(zipFile: File, destination: File) {
+        val root = destination.canonicalPath + File.separator
+        ZipInputStream(BufferedInputStream(zipFile.inputStream())).use { zip ->
+            var entry = zip.nextEntry
+            while (entry != null) {
+                val output = File(destination, entry.name)
+                if (!output.canonicalPath.startsWith(root)) throw SecurityException("Invalid model archive path")
+                if (entry.isDirectory) output.mkdirs() else {
+                    output.parentFile?.mkdirs()
+                    FileOutputStream(output).use { out -> zip.copyTo(out) }
+                }
+                zip.closeEntry()
+                entry = zip.nextEntry
+            }
+        }
+    }
+
+    private fun listenLoop() {
+        val sampleRate = 16000
+        val minBuffer = AudioRecord.getMinBufferSize(
+            sampleRate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT
+        )
+        if (minBuffer <= 0) throw IllegalStateException("AudioRecord buffer unavailable")
+        val buffer = ByteArray(maxOf(minBuffer, 4096))
+        val record = AudioRecord(
+            MediaRecorder.AudioSource.VOICE_RECOGNITION,
+            sampleRate,
+            AudioFormat.CHANNEL_IN_MONO,
+            AudioFormat.ENCODING_PCM_16BIT,
+            buffer.size * 2
+        )
+        if (record.state != AudioRecord.STATE_INITIALIZED) {
+            record.release()
+            throw IllegalStateException("Microphone could not be initialized")
+        }
+        audioRecord = record
+        record.startRecording()
+        while (running && !triggered) {
+            val count = record.read(buffer, 0, buffer.size)
+            if (count > 0) {
+                val result = if (recognizer?.acceptWaveForm(buffer, count) == true) {
+                    recognizer?.result
+                } else recognizer?.partialResult
+                val text = JSONObject(result ?: "{}").optString("text")
+                    .ifBlank { JSONObject(result ?: "{}").optString("partial") }
+                if (isWakePhrase(text)) {
+                    triggered = true
+                    runOnUiThreadCompat()
+                    break
+                }
+            }
+        }
+        try { record.stop() } catch (_: Exception) {}
+        record.release()
+        audioRecord = null
+    }
+
+    private fun isWakePhrase(value: String): Boolean {
+        val normalized = value.lowercase(Locale("ru", "RU"))
+            .replace("ё", "е")
+            .replace(Regex("[^\\p{L}\\p{N}]+"), " ")
+            .trim()
+        if (normalized.isBlank()) return false
+        val words = normalized.split(Regex("\\s+"))
+        val targets = listOf("квайет", "квайт", "квейт", "кваит", "квеет", "кьют", "квиет", "куайт", "куаит", "quiet")
+        return words.any { word ->
+            targets.any { target -> word == target || (target.length >= 5 && levenshtein(word, target) <= 1) }
         }
     }
 
@@ -112,32 +174,38 @@ class WakeWordService : Service() {
             current[0] = i + 1
             for (j in b.indices) {
                 val cost = if (a[i] == b[j]) 0 else 1
-                current[j + 1] = minOf(
-                    current[j] + 1,
-                    previous[j + 1] + 1,
-                    previous[j] + cost
-                )
+                current[j + 1] = minOf(current[j] + 1, previous[j + 1] + 1, previous[j] + cost)
             }
             previous = current
         }
         return previous[b.length]
     }
 
-    private fun restartSoon() {
-        if (!running) return
-        android.os.Handler(mainLooper).postDelayed({ if (running) startRecognition() }, 900)
+    private fun runOnUiThreadCompat() {
+        android.os.Handler(mainLooper).post {
+            if (!running) return@post
+            updateNotification("Ключевое слово найдено")
+            val intent = Intent(this, MainActivity::class.java).apply {
+                action = "com.quiet.assistant.WAKE"
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            }
+            startActivity(intent)
+            stopSelf()
+        }
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        running = true
-        return START_NOT_STICKY
-    }
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_NOT_STICKY
 
     override fun onDestroy() {
         running = false
-        recognizer?.cancel()
-        recognizer?.destroy()
+        try { audioRecord?.stop() } catch (_: Exception) {}
+        audioRecord?.release()
+        audioRecord = null
+        try { recognizer?.close() } catch (_: Exception) {}
+        try { model?.close() } catch (_: Exception) {}
         recognizer = null
+        model = null
+        worker.shutdownNow()
         super.onDestroy()
     }
 
