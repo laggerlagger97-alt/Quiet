@@ -302,7 +302,14 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         }
     }
 
-    private fun startWakeListening() {\n        if (!wakeMode || isFinishing) return\n        wakeOnly = true\n        status.text = "Quiet активен. Скажи «Quiet»"\n        startListening()\n    }\n\n    private fun startListening() {
+    private fun startWakeListening() {
+        if (!wakeMode || isFinishing) return
+        wakeOnly = true
+        status.text = "Quiet активен. Скажи «Quiet»"
+        startListening()
+    }
+
+    private fun startListening() {
         if (apiKey.isBlank()) {
             showApiKeyDialog()
             return
@@ -381,7 +388,62 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         }
     }
 
-    private fun speakNeural(text: String) {\n        executor.execute {\n            try {\n                val audio = requestGeminiSpeech(text)\n                val track = AudioTrack.Builder()\n                    .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())\n                    .setAudioFormat(AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_16BIT).setSampleRate(24000).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build())\n                    .setBufferSizeInBytes(audio.size)\n                    .setTransferMode(AudioTrack.MODE_STATIC)\n                    .build()\n                track.write(audio, 0, audio.size)\n                track.play()\n                while (track.playbackHeadPosition < audio.size / 2 && track.playState == AudioTrack.PLAYSTATE_PLAYING) Thread.sleep(40)\n                track.release()\n                runOnUiThread { if (wakeMode) startWakeListening() }\n            } catch (e: Exception) {\n                runOnUiThread {\n                    status.text = "Нейроозвучка недоступна — включаю голос телефона"\n                    tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "quiet_fallback")\n                    if (wakeMode) startWakeListening()\n                }\n            }\n        }\n    }\n\n    private fun requestGeminiSpeech(text: String): ByteArray {\n        val url = URL("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent")\n        val connection = url.openConnection() as HttpURLConnection\n        try {\n            connection.requestMethod = "POST"\n            connection.connectTimeout = 20000\n            connection.readTimeout = 60000\n            connection.doOutput = true\n            connection.setRequestProperty("Content-Type", "application/json; charset=UTF-8")\n            connection.setRequestProperty("x-goog-api-key", apiKey)\n            val body = JSONObject()\n                .put("contents", JSONArray().put(JSONObject().put("parts", JSONArray().put(JSONObject().put("text", "Произнеси естественным, спокойным, дружелюбным женским голосом на русском языке. Текст: $text")))))\n                .put("generationConfig", JSONObject()\n                    .put("responseModalities", JSONArray().put("AUDIO"))\n                    .put("speechConfig", JSONObject().put("voiceConfig", JSONObject().put("prebuiltVoiceConfig", JSONObject().put("voiceName", "Kore")))))\n            connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }\n            val code = connection.responseCode\n            val stream = if (code in 200..299) connection.inputStream else connection.errorStream\n            val response = stream.bufferedReader().use { it.readText() }\n            if (code !in 200..299) throw Exception("Gemini TTS HTTP $code")\n            val parts = JSONObject(response).getJSONArray("candidates").getJSONObject(0).getJSONObject("content").getJSONArray("parts")\n            for (i in 0 until parts.length()) {\n                val inline = parts.getJSONObject(i).optJSONObject("inlineData") ?: continue\n                val data = inline.optString("data")\n                if (data.isNotBlank()) return Base64.decode(data, Base64.DEFAULT)\n            }\n            throw Exception("Gemini не вернул аудио")\n        } finally { connection.disconnect() }\n    }\n\n    private fun requestGemini(question: String): String {
+    private fun speakNeural(text: String) {
+        executor.execute {
+            try {
+                val audio = requestGeminiSpeech(text)
+                val track = AudioTrack.Builder()
+                    .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
+                    .setAudioFormat(AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_16BIT).setSampleRate(24000).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build())
+                    .setBufferSizeInBytes(audio.size)
+                    .setTransferMode(AudioTrack.MODE_STATIC)
+                    .build()
+                track.write(audio, 0, audio.size)
+                track.play()
+                while (track.playbackHeadPosition < audio.size / 2 && track.playState == AudioTrack.PLAYSTATE_PLAYING) Thread.sleep(40)
+                track.release()
+                runOnUiThread { if (wakeMode) startWakeListening() }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    status.text = "Нейроозвучка недоступна — включаю голос телефона"
+                    tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "quiet_fallback")
+                    if (wakeMode) startWakeListening()
+                }
+            }
+        }
+    }
+
+    private fun requestGeminiSpeech(text: String): ByteArray {
+        val url = URL("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent")
+        val connection = url.openConnection() as HttpURLConnection
+        try {
+            connection.requestMethod = "POST"
+            connection.connectTimeout = 20000
+            connection.readTimeout = 60000
+            connection.doOutput = true
+            connection.setRequestProperty("Content-Type", "application/json; charset=UTF-8")
+            connection.setRequestProperty("x-goog-api-key", apiKey)
+            val body = JSONObject()
+                .put("contents", JSONArray().put(JSONObject().put("parts", JSONArray().put(JSONObject().put("text", "Произнеси естественным, спокойным, дружелюбным женским голосом на русском языке. Текст: $text")))))
+                .put("generationConfig", JSONObject()
+                    .put("responseModalities", JSONArray().put("AUDIO"))
+                    .put("speechConfig", JSONObject().put("voiceConfig", JSONObject().put("prebuiltVoiceConfig", JSONObject().put("voiceName", "Kore")))))
+            connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+            val code = connection.responseCode
+            val stream = if (code in 200..299) connection.inputStream else connection.errorStream
+            val response = stream.bufferedReader().use { it.readText() }
+            if (code !in 200..299) throw Exception("Gemini TTS HTTP $code")
+            val parts = JSONObject(response).getJSONArray("candidates").getJSONObject(0).getJSONObject("content").getJSONArray("parts")
+            for (i in 0 until parts.length()) {
+                val inline = parts.getJSONObject(i).optJSONObject("inlineData") ?: continue
+                val data = inline.optString("data")
+                if (data.isNotBlank()) return Base64.decode(data, Base64.DEFAULT)
+            }
+            throw Exception("Gemini не вернул аудио")
+        } finally { connection.disconnect() }
+    }
+
+    private fun requestGemini(question: String): String {
         val url = URL(
             "https://generativelanguage.googleapis.com/v1beta/" +
                 "models/gemini-3.8-flash:generateContent"
