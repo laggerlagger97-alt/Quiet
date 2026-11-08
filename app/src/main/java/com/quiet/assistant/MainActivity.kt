@@ -561,7 +561,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     }
 
     private fun requestGemini(question: String): String {
-        val models = listOf("gemini-3.8-flash", "gemini-3.5-flash")
+        val models = listOf("gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash")
         var lastError: Exception? = null
 
         // Bound network retries so a failed request does not keep the user waiting.
@@ -585,18 +585,30 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         }
 
         val detail = lastError?.message.orEmpty()
-        if (detail.contains("UnknownHost", ignoreCase = true) ||
-            detail.contains("Unable to resolve host", ignoreCase = true) ||
-            detail.contains("No address associated with hostname", ignoreCase = true)
-        ) {
-            throw Exception("Телефон не может найти сервер Gemini. Проверь интернет, отключи VPN или частный DNS и попробуй снова.")
+        val lower = detail.lowercase(Locale.ROOT)
+        if (lower.contains("unknownhost") || lower.contains("unable to resolve host") ||
+            lower.contains("no address associated with hostname")) {
+            throw Exception("Нет соединения с сервером Google. Проверь интернет, VPN и частный DNS.")
         }
-        if (detail.contains("timeout", ignoreCase = true) ||
-            detail.contains("timed out", ignoreCase = true)
-        ) {
-            throw Exception("Gemini не ответил вовремя. Проверь соединение и повтори запрос.")
+        if (lower.contains("timeout") || lower.contains("timed out")) {
+            throw Exception("Сервер не ответил вовремя. Проверь соединение и повтори запрос.")
         }
-        throw Exception("Gemini временно недоступен. Попробуй ещё раз. $detail")
+        if (lower.contains("http 400") || lower.contains("invalid_argument")) {
+            throw Exception("Google отклонил формат запроса (400). $detail")
+        }
+        if (lower.contains("http 401") || lower.contains("http 403") || lower.contains("api_key_invalid") || lower.contains("permission_denied")) {
+            throw Exception("API-ключ недействителен или не имеет доступа. Проверь ключ Gemini в настройках. $detail")
+        }
+        if (lower.contains("http 404") || lower.contains("model_not_found")) {
+            throw Exception("Google не нашёл доступную модель для этого API-ключа. $detail")
+        }
+        if (lower.contains("http 429") || lower.contains("quota") || lower.contains("rate limit")) {
+            throw Exception("Превышен лимит запросов или квота Gemini. Подожди сброса лимита. $detail")
+        }
+        if (lower.contains("http 503") || lower.contains("http 502") || lower.contains("http 500")) {
+            throw Exception("Серверы Google перегружены или временно недоступны. Попробуй позже. $detail")
+        }
+        throw Exception("Не удалось получить ответ от Gemini: $detail")
     }
 
     private fun requestGeminiWithModel(question: String, model: String): String {
@@ -653,7 +665,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 } catch (e: Exception) {
                     "HTTP $code"
                 }
-                throw Exception(message)
+                throw Exception("HTTP $code: $message")
             }
 
             val json = JSONObject(responseText)
