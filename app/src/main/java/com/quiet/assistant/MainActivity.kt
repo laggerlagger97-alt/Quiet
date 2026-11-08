@@ -81,7 +81,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(6), dp(16), dp(4))
+            setPadding(dp(14), dp(3), dp(14), dp(2))
             setBackgroundColor(bg)
         }
 
@@ -135,7 +135,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             background = rounded(panel, 16f)
             maxLines = 2
         }
-        root.addView(status, LinearLayout.LayoutParams(-1, dp(42)))
+        root.addView(status, LinearLayout.LayoutParams(-1, dp(38)))
 
         val orb = TextView(this).apply {
             text = "✦"
@@ -152,8 +152,8 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         }
         val orbWrap = LinearLayout(this).apply {
             gravity = Gravity.CENTER
-            setPadding(0, dp(7), 0, dp(7))
-            addView(orb, LinearLayout.LayoutParams(dp(64), dp(64)))
+            setPadding(0, dp(3), 0, dp(3))
+            addView(orb, LinearLayout.LayoutParams(dp(54), dp(54)))
         }
         root.addView(orbWrap)
 
@@ -165,9 +165,13 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             setPadding(dp(12), dp(10), dp(12), dp(10))
             gravity = Gravity.TOP
         }
-        root.addView(conversationView, LinearLayout.LayoutParams(-1, 0, 1f).apply {
-            topMargin = dp(2)
-            bottomMargin = dp(6)
+        val chatScroll = ScrollView(this).apply {
+            isFillViewport = true
+            addView(conversationView, ScrollView.LayoutParams(-1, -2))
+        }
+        root.addView(chatScroll, LinearLayout.LayoutParams(-1, 0, 1f).apply {
+            topMargin = dp(1)
+            bottomMargin = dp(3)
         })
 
         talkButton = Button(this).apply {
@@ -183,7 +187,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 if (isListening) stopListening() else startListening()
             }
         }
-        root.addView(talkButton, LinearLayout.LayoutParams(-1, dp(48)).apply {
+        root.addView(talkButton, LinearLayout.LayoutParams(-1, dp(44)).apply {
             bottomMargin = dp(5)
         })
 
@@ -226,7 +230,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             background = android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT)
             setOnClickListener { showApiKeyDialog() }
         }
-        root.addView(settingsButton, LinearLayout.LayoutParams(-1, dp(30)))
+        root.addView(settingsButton, LinearLayout.LayoutParams(-1, dp(24)))
         setContentView(root)
     }
 
@@ -279,7 +283,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         super.onNewIntent(intent)
         if (intent?.action == "com.quiet.assistant.WAKE") {
             wakeMode = false
-            tts?.speak("Слушаю", TextToSpeech.QUEUE_FLUSH, null, "quiet_wake")
+            speakAnswer("Слушаю")
             status.text = "Слушаю тебя. Задай вопрос."
             talkButton.text = "🎙  Включить Quiet"
             android.os.Handler(mainLooper).postDelayed({ startListening() }, 900)
@@ -394,12 +398,25 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         status.text = "Остановлено"
     }
 
+    private fun appendChat(value: String) {
+        conversationView.append(value)
+        conversationView.post {
+            val parent = conversationView.parent
+            if (parent is ScrollView) parent.fullScroll(android.view.View.FOCUS_DOWN)
+        }
+    }
+
+    private fun speakAnswer(text: String) {
+        if (apiKey.isNotBlank()) speakNeural(text)
+        else tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "quiet_answer")
+    }
+
     private fun askGemini(question: String) {
         val localAction = executeLocalCommand(question)
         if (localAction != null) {
-            conversationView.append("\n\nТы: $question\nQuiet: $localAction\n")
+            appendChat("\n\nТы: $question\nQuiet: $localAction\n")
             status.text = "Готов слушать дальше."
-            tts?.speak(localAction, TextToSpeech.QUEUE_FLUSH, null, "quiet_action")
+            speakAnswer(localAction)
             return
         }
 
@@ -409,7 +426,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         }
 
         status.text = "Quiet думает..."
-        conversationView.append("\n\nТы: $question\n")
+        appendChat("\n\nТы: $question\n")
 
         executor.execute {
             try {
@@ -421,20 +438,15 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                         history.removeAt(0)
                     }
 
-                    conversationView.append("\nQuiet: $answer\n")
+                    appendChat("\nQuiet: $answer\n")
                     status.text = "Готов слушать дальше."
 
-                    tts?.speak(
-                        answer,
-                        TextToSpeech.QUEUE_FLUSH,
-                        null,
-                        "quiet_answer"
-                    )
+                    speakAnswer(answer)
                 }
             } catch (e: Exception) {
                 runOnUiThread {
                     status.text = "Не удалось получить ответ: ${e.message ?: "ошибка сети"}"
-                    conversationView.append("\nОшибка: ${e.message}\n")
+                    appendChat("\nОшибка: ${e.message}\n")
                 }
             }
         }
@@ -451,6 +463,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             val apps = listOf(
                 Triple(listOf("youtube", "ютуб", "ю туб", "ютубчик"), "com.google.android.youtube", "YouTube"),
                 Triple(listOf("telegram", "телеграм", "телеграмм", "телегу"), "org.telegram.messenger", "Telegram"),
+                Triple(listOf("whatsapp business", "ватсап бизнес", "вотсап бизнес", "вацап бизнес"), "com.whatsapp.w4b", "WhatsApp Business"),
                 Triple(listOf("whatsapp", "ватсап", "вотсап", "вацап"), "com.whatsapp", "WhatsApp"),
                 Triple(listOf("instagram", "инстаграм", "инсту"), "com.instagram.android", "Instagram"),
                 Triple(listOf("tiktok", "тикток"), "com.zhiliaoapp.musically", "TikTok"),
@@ -467,6 +480,8 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             if (app != null) {
                 return try {
                     val intent = when (app.second) {
+                        "com.whatsapp.w4b" -> packageManager.getLaunchIntentForPackage("com.whatsapp.w4b")
+                            ?: return "WhatsApp Business не найден. Проверь, что он установлен."
                         "settings" -> Intent(android.provider.Settings.ACTION_SETTINGS)
                         "camera" -> Intent("android.media.action.IMAGE_CAPTURE")
                         "contacts" -> Intent(Intent.ACTION_VIEW).setType("vnd.android.cursor.dir/contact")
