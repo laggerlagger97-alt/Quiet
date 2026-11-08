@@ -44,6 +44,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private var wakeOnly = false
     private var apiKey = ""
     private var openRouterKey = ""
+    private var groqKey = ""
 
     private val executor = Executors.newSingleThreadExecutor()
     private val history = mutableListOf<Pair<String, String>>()
@@ -56,6 +57,8 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             .getString("gemini_key", "") ?: ""
         openRouterKey = getSharedPreferences("quiet_settings", MODE_PRIVATE)
             .getString("openrouter_key", "") ?: ""
+        groqKey = getSharedPreferences("quiet_settings", MODE_PRIVATE)
+            .getString("groq_key", "") ?: ""
 
         createInterface()
         createSpeechRecognizer()
@@ -251,15 +254,21 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
             setText(openRouterKey)
         }
+        val groqInput = EditText(this).apply {
+            hint = "Groq API key (резерв №2)"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            setText(groqKey)
+        }
         val container = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(24, 8, 24, 0)
             addView(geminiInput)
             addView(routerInput)
+            addView(groqInput)
         }
         val dialog = AlertDialog.Builder(this)
             .setTitle("Настройки ИИ")
-            .setMessage("Gemini работает первым. Если он недоступен, Quiet попробует OpenRouter. Достаточно указать хотя бы один ключ.")
+            .setMessage("Порядок: Gemini → OpenRouter → Groq. Бесплатный ключ Groq: console.groq.com/keys.")
             .setView(container)
             .setPositiveButton("Сохранить", null)
             .setNegativeButton("Отмена", null)
@@ -268,15 +277,18 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 val gemini = geminiInput.text.toString().trim()
                 val router = routerInput.text.toString().trim()
-                if (gemini.isBlank() && router.isBlank()) {
+                val groq = groqInput.text.toString().trim()
+                if (gemini.isBlank() && router.isBlank() && groq.isBlank()) {
                     geminiInput.error = "Укажи хотя бы один API-ключ"
                     return@setOnClickListener
                 }
                 apiKey = gemini
                 openRouterKey = router
+                groqKey = groq
                 getSharedPreferences("quiet_settings", MODE_PRIVATE).edit()
                     .putString("gemini_key", gemini)
                     .putString("openrouter_key", router)
+                    .putString("groq_key", groq)
                     .apply()
                 status.text = "Настройки ИИ сохранены."
                 dialog.dismiss()
@@ -592,22 +604,42 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     }
 
     private fun requestAssistant(question: String): String {
-        var geminiFailure: Exception? = null
-        if (apiKey.isNotBlank()) {
-            try {
-                return requestGemini(question)
-            } catch (e: Exception) {
-                geminiFailure = e
+        val failures = mutableListOf<String>()
+        if (apiKey.isNotBlank()) try { return requestGemini(question) } catch (e: Exception) { failures.add("Gemini: ${e.message}") }
+        if (openRouterKey.isNotBlank()) try { return requestOpenRouter(question) } catch (e: Exception) { failures.add("OpenRouter: ${e.message}") }
+        if (groqKey.isNotBlank()) try { return requestGroq(question) } catch (e: Exception) { failures.add("Groq: ${e.message}") }
+        if (failures.isNotEmpty()) throw Exception(failures.joinToString(" | "))
+        throw Exception("Добавь API-ключ Gemini, OpenRouter или Groq в настройках.")
+    }
+
+    private fun requestGroq(question: String): String {
+        val connection = URL("https://api.groq.com/openai/v1/chat/completions").openConnection() as HttpURLConnection
+        try {
+            connection.requestMethod = "POST"
+            connection.connectTimeout = 12000
+            connection.readTimeout = 45000
+            connection.doOutput = true
+            connection.setRequestProperty("Content-Type", "application/json; charset=UTF-8")
+            connection.setRequestProperty("Authorization", "Bearer $groqKey")
+            val messages = JSONArray()
+            messages.put(JSONObject().put("role", "system").put("content", "Тебя зовут Quiet. Ты дружелюбный голосовой помощник. Отвечай на русском языке, ясно и естественно."))
+            for ((oldQuestion, oldAnswer) in history.takeLast(8)) {
+                messages.put(JSONObject().put("role", "user").put("content", oldQuestion))
+                messages.put(JSONObject().put("role", "assistant").put("content", oldAnswer))
             }
-        }
-        if (openRouterKey.isNotBlank()) {
-            try {
-                return requestOpenRouter(question)
-            } catch (e: Exception) {
-                throw Exception("Gemini: ${geminiFailure?.message ?: "ключ не задан"}. OpenRouter: ${e.message}")
-            }
-        }
-        throw geminiFailure ?: Exception("Добавь ключ Gemini или OpenRouter в настройках.")
+            messages.put(JSONObject().put("role", "user").put("content", question))
+            val body = JSONObject().put("model", "openai/gpt-oss-20b").put("messages", messages).put("max_completion_tokens", 600)
+            connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+            val code = connection.responseCode
+            val stream = if (code in 200..299) connection.inputStream else connection.errorStream
+            val raw = stream.bufferedReader().use { it.readText() }
+            if (code !in 200..299) throw Exception("HTTP $code: " + try { JSONObject(raw).optJSONObject("error")?.optString("message", raw) ?: raw } catch (_: Exception) { raw.take(300) })
+            val choices = JSONObject(raw).optJSONArray("choices") ?: throw Exception("Groq не вернул список ответов.")
+            if (choices.length() == 0) throw Exception("Groq не вернул вариантов ответа.")
+            val answer = choices.getJSONObject(0).optJSONObject("message")?.optString("content", "")?.trim().orEmpty()
+            if (answer.isBlank()) throw Exception("Groq вернул пустой ответ.")
+            return answer
+        } finally { connection.disconnect() }
     }
 
     private fun requestOpenRouter(question: String): String {
