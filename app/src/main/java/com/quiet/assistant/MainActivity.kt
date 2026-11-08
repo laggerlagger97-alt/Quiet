@@ -81,7 +81,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(14), dp(3), dp(14), dp(2))
+            setPadding(dp(14), dp(3), dp(14), dp(10))
             setBackgroundColor(bg)
         }
 
@@ -475,7 +475,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 Triple(listOf("youtube", "ютуб", "ю туб", "ютубчик"), "com.google.android.youtube", "YouTube"),
                 Triple(listOf("telegram", "телеграм", "телеграмм", "телегу"), "org.telegram.messenger", "Telegram"),
                 Triple(listOf("whatsapp business", "whatsappbusiness", "ватсап бизнес", "ватсапбизнес", "вотсап бизнес", "вотсапбизнес", "вацап бизнес", "вацапбизнес", "бизнес ватсап"), "com.whatsapp.w4b", "WhatsApp Business"),
-                Triple(listOf("whatsapp", "ватсап", "вотсап", "вацап"), "com.whatsapp", "WhatsApp"),
+                Triple(listOf("whatsapp", "ватсап", "вотсап", "вацап"), "com.whatsapp.w4b", "WhatsApp Business"),
                 Triple(listOf("instagram", "инстаграм", "инсту"), "com.instagram.android", "Instagram"),
                 Triple(listOf("tiktok", "тикток"), "com.zhiliaoapp.musically", "TikTok"),
                 Triple(listOf("chrome", "хром", "браузер", "интернет"), "com.android.chrome", "браузер"),
@@ -656,7 +656,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     }
 
     private fun requestGemini(question: String): String {
-        val models = listOf("gemini-2.5-flash", "gemini-2.0-flash")
+        val models = listOf("gemini-3.8-flash")
         var lastError: Exception? = null
 
         // Bound network retries so a failed request does not keep the user waiting.
