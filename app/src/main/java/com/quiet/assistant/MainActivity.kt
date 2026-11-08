@@ -488,11 +488,45 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     }
 
     private fun requestGemini(question: String): String {
-        val url = URL(
-            "https://generativelanguage.googleapis.com/v1beta/" +
-                "models/gemini-3.8-flash:generateContent"
-        )
+        val models = listOf("gemini-3.8-flash", "gemini-3.8-flash-lite")
+        var lastError: Exception? = null
 
+        for ((modelIndex, model) in models.withIndex()) {
+            val attempts = if (modelIndex == 0) 3 else 1
+            for (attempt in 0 until attempts) {
+                try {
+                    return requestGeminiWithModel(question, model)
+                } catch (e: Exception) {
+                    lastError = e
+                    val message = e.message.orEmpty().lowercase(Locale.ROOT)
+                    val temporary = message.contains("high demand") ||
+                        message.contains("overloaded") ||
+                        message.contains("unavailable") ||
+                        message.contains("temporarily") ||
+                        message.contains("try again") ||
+                        message.contains("http 429") ||
+                        message.contains("http 500") ||
+                        message.contains("http 502") ||
+                        message.contains("http 503") ||
+                        message.contains("http 504")
+                    if (!temporary) throw e
+                    if (attempt < attempts - 1) {
+                        Thread.sleep(1500L * (attempt + 1))
+                    }
+                }
+            }
+        }
+
+        throw Exception(
+            "Сейчас сервисы Gemini перегружены. Попробуй ещё раз через минуту. " +
+                (lastError?.message ?: "")
+        )
+    }
+
+    private fun requestGeminiWithModel(question: String, model: String): String {
+        val url = URL(
+            "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent"
+        )
         val connection = url.openConnection() as HttpURLConnection
 
         try {
@@ -500,92 +534,43 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             connection.connectTimeout = 20000
             connection.readTimeout = 60000
             connection.doOutput = true
-            connection.setRequestProperty(
-                "Content-Type",
-                "application/json; charset=UTF-8"
-            )
+            connection.setRequestProperty("Content-Type", "application/json; charset=UTF-8")
             connection.setRequestProperty("x-goog-api-key", apiKey)
 
             val contents = JSONArray()
-
             for ((oldQuestion, oldAnswer) in history.takeLast(8)) {
-                contents.put(
-                    JSONObject()
-                        .put("role", "user")
-                        .put(
-                            "parts",
-                            JSONArray().put(
-                                JSONObject().put("text", oldQuestion)
-                            )
-                        )
-                )
-
-                contents.put(
-                    JSONObject()
-                        .put("role", "model")
-                        .put(
-                            "parts",
-                            JSONArray().put(
-                                JSONObject().put("text", oldAnswer)
-                            )
-                        )
-                )
+                contents.put(JSONObject().put("role", "user")
+                    .put("parts", JSONArray().put(JSONObject().put("text", oldQuestion))))
+                contents.put(JSONObject().put("role", "model")
+                    .put("parts", JSONArray().put(JSONObject().put("text", oldAnswer))))
             }
-
-            contents.put(
-                JSONObject()
-                    .put("role", "user")
-                    .put(
-                        "parts",
-                        JSONArray().put(
-                            JSONObject().put("text", question)
-                        )
-                    )
-            )
+            contents.put(JSONObject().put("role", "user")
+                .put("parts", JSONArray().put(JSONObject().put("text", question))))
 
             val body = JSONObject()
-                .put(
-                    "systemInstruction",
-                    JSONObject().put(
-                        "parts",
-                        JSONArray().put(
-                            JSONObject().put(
-                                "text",
-                                "Тебя зовут Quiet. Ты дружелюбный голосовой " +
-                                    "помощник. Всегда отвечай на русском языке, " +
-                                    "естественно, понятно и не слишком длинно. " +
-                                    "Не повторяй вопрос вместо ответа."
-                            )
-                        )
+                .put("systemInstruction", JSONObject().put("parts", JSONArray().put(
+                    JSONObject().put("text",
+                        "Тебя зовут Quiet. Ты дружелюбный голосовой помощник. " +
+                            "Всегда отвечай на русском языке, естественно, понятно и не слишком длинно. " +
+                            "Не повторяй вопрос вместо ответа."
                     )
-                )
+                )))
                 .put("contents", contents)
-                .put(
-                    "generationConfig",
-                    JSONObject()
-                        .put("temperature", 0.7)
-                        .put("maxOutputTokens", 500)
-                )
+                .put("generationConfig", JSONObject()
+                    .put("temperature", 0.7)
+                    .put("maxOutputTokens", 500))
 
             connection.outputStream.use {
                 it.write(body.toString().toByteArray(Charsets.UTF_8))
             }
 
             val code = connection.responseCode
-            val stream = if (code in 200..299) {
-                connection.inputStream
-            } else {
-                connection.errorStream
-            }
-
-            val responseText = stream.bufferedReader().use {
-                it.readText()
-            }
+            val stream = if (code in 200..299) connection.inputStream else connection.errorStream
+            val responseText = stream.bufferedReader().use { it.readText() }
 
             if (code !in 200..299) {
                 val message = try {
-                    JSONObject(responseText)
-                        .getJSONObject("error")
+                    JSONObject(responseText).getJSONObject("error")
                         .optString("message", "HTTP $code")
                 } catch (e: Exception) {
                     "HTTP $code"
@@ -596,8 +581,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             val json = JSONObject(responseText)
             val candidates = json.optJSONArray("candidates")
                 ?: throw Exception(
-                    json.optJSONObject("promptFeedback")
-                        ?.optString("blockReason")
+                    json.optJSONObject("promptFeedback")?.optString("blockReason")
                         ?.takeIf { !it.isNullOrBlank() }
                         ?.let { "Запрос заблокирован: $it" }
                         ?: "Сервис не вернул ответ. Попробуй изменить вопрос."
@@ -606,15 +590,12 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 throw Exception("Gemini не вернул вариантов ответа. Попробуй ещё раз.")
             }
 
-            val content = candidates.optJSONObject(0)?.optJSONObject("content")
-            val parts = content?.optJSONArray("parts")
+            val parts = candidates.optJSONObject(0)?.optJSONObject("content")?.optJSONArray("parts")
                 ?: throw Exception("В ответе Gemini нет текста. Попробуй ещё раз.")
-
             val answer = StringBuilder()
             for (i in 0 until parts.length()) {
                 answer.append(parts.optJSONObject(i)?.optString("text", "").orEmpty())
             }
-
             return answer.toString().trim().ifBlank {
                 "Gemini вернул пустой ответ. Попробуй задать вопрос иначе."
             }
