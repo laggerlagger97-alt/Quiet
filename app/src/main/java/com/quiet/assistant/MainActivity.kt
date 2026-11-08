@@ -67,75 +67,75 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         val accent = 0xFF8B7CFF.toInt()
         val muted = 0xFF9AA6C4.toInt()
         val white = 0xFFF5F7FF.toInt()
-
+        val density = resources.displayMetrics.density
+        fun dp(v: Int) = (v * density + 0.5f).toInt()
         fun rounded(color: Int, radius: Float) =
             android.graphics.drawable.GradientDrawable().apply {
                 setColor(color)
-                cornerRadius = radius
+                cornerRadius = dp(radius.toInt()).toFloat()
             }
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(18, 12, 18, 12)
+            setPadding(dp(16), dp(6), dp(16), dp(4))
             setBackgroundColor(bg)
         }
 
-        val content = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(4, 8, 4, 12)
-        }
         val top = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
         val brand = TextView(this).apply {
             text = "quiet."
-            textSize = 30f
+            textSize = 26f
             setTextColor(white)
             typeface = android.graphics.Typeface.create("sans-serif", android.graphics.Typeface.BOLD)
         }
         val live = TextView(this).apply {
             text = "● AI ASSISTANT"
-            textSize = 10f
+            textSize = 9f
             setTextColor(0xFF9D91FF.toInt())
             gravity = Gravity.CENTER
-            setPadding(12, 8, 12, 8)
-            background = rounded(0xFF252344.toInt(), 40f)
+            setPadding(dp(10), dp(5), dp(10), dp(5))
+            background = rounded(0xFF252344.toInt(), 30f)
         }
-        top.addView(brand, LinearLayout.LayoutParams(0, -2, 1f))
+        top.addView(brand, LinearLayout.LayoutParams(0, dp(38), 1f))
         top.addView(live)
-        content.addView(top)
+        root.addView(top)
 
         val greeting = TextView(this).apply {
-            text = "Твой голос.\nТвой помощник."
-            textSize = 27f
+            text = "Твой голос. Твой помощник."
+            textSize = 20f
             setTextColor(white)
             typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
-            setPadding(0, 20, 0, 6)
+            setPadding(0, dp(4), 0, dp(2))
+            maxLines = 1
         }
-        content.addView(greeting)
+        root.addView(greeting)
 
         val hint = TextView(this).apply {
             text = "Нажми «Говорить» и задай вопрос"
-            textSize = 14f
+            textSize = 12f
             setTextColor(muted)
-            setPadding(0, 0, 0, 16)
+            setPadding(0, 0, 0, dp(7))
+            maxLines = 1
         }
-        content.addView(hint)
+        root.addView(hint)
 
         status = TextView(this).apply {
             text = "Я рядом. Готов помочь."
-            textSize = 14f
+            textSize = 12f
             setTextColor(0xFFD7D3FF.toInt())
             gravity = Gravity.CENTER
-            setPadding(14, 14, 14, 14)
-            background = rounded(panel, 20f)
+            setPadding(dp(10), dp(8), dp(10), dp(8))
+            background = rounded(panel, 16f)
+            maxLines = 2
         }
-        content.addView(status)
+        root.addView(status, LinearLayout.LayoutParams(-1, dp(42)))
 
         val orb = TextView(this).apply {
             text = "✦"
-            textSize = 44f
+            textSize = 32f
             gravity = Gravity.CENTER
             setTextColor(white)
             background = android.graphics.drawable.GradientDrawable(
@@ -143,56 +143,55 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 intArrayOf(0xFF8D7CFF.toInt(), 0xFF5145B8.toInt())
             ).apply {
                 shape = android.graphics.drawable.GradientDrawable.OVAL
-                setStroke(2, 0xFFB6ADFF.toInt())
+                setStroke(dp(2), 0xFFB6ADFF.toInt())
             }
         }
         val orbWrap = LinearLayout(this).apply {
             gravity = Gravity.CENTER
-            setPadding(0, 14, 0, 14)
-            addView(orb, LinearLayout.LayoutParams(88, 88))
+            setPadding(0, dp(7), 0, dp(7))
+            addView(orb, LinearLayout.LayoutParams(dp(64), dp(64)))
         }
-        content.addView(orbWrap)
+        root.addView(orbWrap)
 
         conversationView = TextView(this).apply {
-            text = "Здесь появится наша беседа.\n\nМожешь спросить меня о чём угодно."
-            textSize = 15f
+            text = "Здесь появится наша беседа.\nМожешь спросить меня о чём угодно."
+            textSize = 13f
             setTextColor(white)
-            setLineSpacing(4f, 1f)
-            setPadding(16, 16, 16, 16)
+            setLineSpacing(dp(2).toFloat(), 1f)
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            gravity = Gravity.TOP
         }
-        val conversationPanel = ScrollView(this).apply {
-            background = rounded(panel, 20f)
-            clipToOutline = true
-            addView(conversationView)
-        }
-        content.addView(conversationPanel, LinearLayout.LayoutParams(-1, 220))
-
-        val scroll = ScrollView(this).apply {
-            isFillViewport = true
-            addView(content)
-        }
-        root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
+        root.addView(conversationView, LinearLayout.LayoutParams(-1, 0, 1f).apply {
+            topMargin = dp(2)
+            bottomMargin = dp(6)
+        })
 
         talkButton = Button(this).apply {
             text = "🎙  Говорить"
-            textSize = 16f
+            textSize = 15f
             isAllCaps = false
+            minHeight = 0
+            minimumHeight = 0
+            setPadding(dp(8), 0, dp(8), 0)
             setTextColor(white)
-            background = rounded(accent, 20f)
+            background = rounded(accent, 18f)
             setOnClickListener {
                 if (isListening) stopListening() else startListening()
             }
         }
-        root.addView(talkButton, LinearLayout.LayoutParams(-1, 54).apply {
-            bottomMargin = 7
+        root.addView(talkButton, LinearLayout.LayoutParams(-1, dp(48)).apply {
+            bottomMargin = dp(5)
         })
 
         wakeButton = Button(this).apply {
             text = "◉  Фоновое пробуждение: выкл."
-            textSize = 13f
+            textSize = 12f
             isAllCaps = false
+            minHeight = 0
+            minimumHeight = 0
+            setPadding(dp(8), 0, dp(8), 0)
             setTextColor(0xFFDCD8FF.toInt())
-            background = rounded(0xFF252344.toInt(), 18f)
+            background = rounded(0xFF252344.toInt(), 16f)
             setOnClickListener {
                 if (wakeMode) {
                     stopService(Intent(this@MainActivity, WakeWordService::class.java))
@@ -209,16 +208,21 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 }
             }
         }
-        root.addView(wakeButton, LinearLayout.LayoutParams(-1, 48))
+        root.addView(wakeButton, LinearLayout.LayoutParams(-1, dp(42)).apply {
+            bottomMargin = dp(2)
+        })
+
         val settingsButton = Button(this).apply {
             text = "Настройки Gemini"
             isAllCaps = false
-            textSize = 12f
+            textSize = 11f
+            minHeight = 0
+            minimumHeight = 0
             setTextColor(muted)
             background = android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT)
             setOnClickListener { showApiKeyDialog() }
         }
-        root.addView(settingsButton, LinearLayout.LayoutParams(-1, 38))
+        root.addView(settingsButton, LinearLayout.LayoutParams(-1, dp(30)))
         setContentView(root)
     }
 
