@@ -60,7 +60,8 @@ class WakeWordService : Service() {
                     override fun onResults(results: Bundle?) {
                         val phrase = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty()
                         val normalized = phrase.lowercase(Locale("ru", "RU"))
-                        if (normalized.contains("quiet") || normalized.contains("кьют") || normalized.contains("квиет")) {
+                        val wakeWords = listOf("quiet", "кьют", "квиет", "квайет", "квайт", "квейт")
+                        if (wakeWords.any { normalized.contains(it) }) {
                             val intent = Intent(this@WakeWordService, MainActivity::class.java).apply {
                                 action = "com.quiet.assistant.WAKE"
                                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
