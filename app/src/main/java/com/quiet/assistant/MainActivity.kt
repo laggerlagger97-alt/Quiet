@@ -345,11 +345,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
     private fun startListening() {
         if (isListening) return
-        if (apiKey.isBlank()) {
-            showApiKeyDialog()
-            return
-        }
-
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO)
             != PackageManager.PERMISSION_GRANTED
         ) {
@@ -448,18 +443,21 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         val prefix = prefixes.firstOrNull { q.startsWith(it) }
         if (prefix != null) {
             val target = q.removePrefix(prefix).trim()
+                .removePrefix("мне ").removePrefix("пожалуйста ").trim()
             val apps = listOf(
-                Triple(listOf("youtube", "ютуб", "ю туб"), "com.google.android.youtube", "YouTube"),
-                Triple(listOf("telegram", "телеграм", "телеграмм"), "org.telegram.messenger", "Telegram"),
-                Triple(listOf("whatsapp", "ватсап", "вотсап"), "com.whatsapp", "WhatsApp"),
-                Triple(listOf("instagram", "инстаграм"), "com.instagram.android", "Instagram"),
+                Triple(listOf("youtube", "ютуб", "ю туб", "ютубчик"), "com.google.android.youtube", "YouTube"),
+                Triple(listOf("telegram", "телеграм", "телеграмм", "телегу"), "org.telegram.messenger", "Telegram"),
+                Triple(listOf("whatsapp", "ватсап", "вотсап", "вацап"), "com.whatsapp", "WhatsApp"),
+                Triple(listOf("instagram", "инстаграм", "инсту"), "com.instagram.android", "Instagram"),
                 Triple(listOf("tiktok", "тикток"), "com.zhiliaoapp.musically", "TikTok"),
                 Triple(listOf("chrome", "хром", "браузер", "интернет"), "com.android.chrome", "браузер"),
                 Triple(listOf("карты", "google maps", "гугл карты"), "com.google.android.apps.maps", "Карты"),
                 Triple(listOf("gmail", "почту", "почта"), "com.google.android.gm", "Gmail"),
                 Triple(listOf("камеру", "камера"), "camera", "Камера"),
                 Triple(listOf("настройки", "настройки телефона"), "settings", "Настройки"),
-                Triple(listOf("калькулятор"), "calculator", "Калькулятор")
+                Triple(listOf("калькулятор"), "calculator", "Калькулятор"),
+                Triple(listOf("контакты", "телефонную книгу"), "contacts", "Контакты"),
+                Triple(listOf("звонилку", "телефон", "звонки"), "dialer", "Телефон")
             )
             val app = apps.firstOrNull { a -> a.first.any { target == it || target.contains(it) } }
             if (app != null) {
@@ -467,6 +465,8 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                     val intent = when (app.second) {
                         "settings" -> Intent(android.provider.Settings.ACTION_SETTINGS)
                         "camera" -> Intent("android.media.action.IMAGE_CAPTURE")
+                        "contacts" -> Intent(Intent.ACTION_VIEW).setType("vnd.android.cursor.dir/contact")
+                        "dialer" -> Intent(Intent.ACTION_DIAL)
                         "calculator" -> packageManager.getLaunchIntentForPackage("com.google.android.calculator")
                             ?: packageManager.getLaunchIntentForPackage("com.miui.calculator")
                         else -> packageManager.getLaunchIntentForPackage(app.second)
