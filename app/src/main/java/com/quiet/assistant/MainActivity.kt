@@ -285,7 +285,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             // Keep background mode enabled; Vosk is restarted after the answer.
             wakeMode = true
             wakeOnly = false
-            speakAnswer("Слушаю")
             status.text = "Слушаю тебя. Задай вопрос."
             talkButton.text = "🎙  Включить Quiet"
             android.os.Handler(mainLooper).postDelayed({ startListening() }, 1200)
