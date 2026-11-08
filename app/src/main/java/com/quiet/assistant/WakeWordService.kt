@@ -60,8 +60,20 @@ class WakeWordService : Service() {
                     override fun onResults(results: Bundle?) {
                         val phrase = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty()
                         val normalized = phrase.lowercase(Locale("ru", "RU"))
-                        val wakeWords = listOf("quiet", "кьют", "квиет", "квайет", "квайт", "квейт")
-                        if (wakeWords.any { normalized.contains(it) }) {
+                            .replace("ё", "е")
+                            .replace(Regex("[^\\p{L}\\p{N}]+"), " ")
+                            .trim()
+                        val wakeWords = listOf(
+                            "quiet", "куаит", "куайт", "кьют", "квиет",
+                            "квайет", "квайт", "квейт", "кваит", "квеет",
+                            "ква йет", "квай"
+                        )
+                        val tokens = normalized.split(Regex("\\s+"))
+                        if (wakeWords.any { word ->
+                                normalized.contains(word) || tokens.any { token ->
+                                    token == word || (word.length >= 5 && levenshtein(token, word) <= 1)
+                                }
+                            }) {
                             val intent = Intent(this@WakeWordService, MainActivity::class.java).apply {
                                 action = "com.quiet.assistant.WAKE"
                                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
@@ -76,14 +88,39 @@ class WakeWordService : Service() {
             val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ru-RU")
-                putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
-                putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "ru-RU")
+                putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
+                putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+                putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, false)
+                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1000L)
+                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 700L)
             }
             recognizer?.startListening(intent)
         } catch (e: Exception) {
             Log.e("QuietWake", "Recognition start failed", e)
             restartSoon()
         }
+    }
+
+    private fun levenshtein(a: String, b: String): Int {
+        if (a == b) return 0
+        if (a.isEmpty()) return b.length
+        if (b.isEmpty()) return a.length
+        var previous = IntArray(b.length + 1) { it }
+        for (i in a.indices) {
+            val current = IntArray(b.length + 1)
+            current[0] = i + 1
+            for (j in b.indices) {
+                val cost = if (a[i] == b[j]) 0 else 1
+                current[j + 1] = minOf(
+                    current[j] + 1,
+                    previous[j + 1] + 1,
+                    previous[j] + cost
+                )
+            }
+            previous = current
+        }
+        return previous[b.length]
     }
 
     private fun restartSoon() {
