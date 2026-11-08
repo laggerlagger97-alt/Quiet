@@ -34,6 +34,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private lateinit var status: TextView
     private lateinit var conversationView: TextView
     private lateinit var talkButton: Button
+    private lateinit var wakeButton: Button
 
     private var tts: TextToSpeech? = null
     private var speechRecognizer: SpeechRecognizer? = null
@@ -75,17 +76,21 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(22, 28, 22, 22)
+            setPadding(18, 12, 18, 12)
             setBackgroundColor(bg)
         }
 
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(4, 8, 4, 12)
+        }
         val top = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
         val brand = TextView(this).apply {
             text = "quiet."
-            textSize = 32f
+            textSize = 30f
             setTextColor(white)
             typeface = android.graphics.Typeface.create("sans-serif", android.graphics.Typeface.BOLD)
         }
@@ -99,33 +104,38 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         }
         top.addView(brand, LinearLayout.LayoutParams(0, -2, 1f))
         top.addView(live)
+        content.addView(top)
 
         val greeting = TextView(this).apply {
             text = "Твой голос.\nТвой помощник."
-            textSize = 29f
+            textSize = 27f
             setTextColor(white)
             typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
-            setPadding(0, 30, 0, 6)
+            setPadding(0, 20, 0, 6)
         }
+        content.addView(greeting)
+
         val hint = TextView(this).apply {
-            text = "Скажи «Quiet» или нажми кнопку, чтобы начать"
+            text = "Нажми «Говорить» и задай вопрос"
             textSize = 14f
             setTextColor(muted)
-            setPadding(0, 0, 0, 22)
+            setPadding(0, 0, 0, 16)
         }
+        content.addView(hint)
 
         status = TextView(this).apply {
             text = "Я рядом. Готов помочь."
             textSize = 14f
             setTextColor(0xFFD7D3FF.toInt())
             gravity = Gravity.CENTER
-            setPadding(14, 16, 14, 16)
-            background = rounded(panel, 22f)
+            setPadding(14, 14, 14, 14)
+            background = rounded(panel, 20f)
         }
+        content.addView(status)
 
         val orb = TextView(this).apply {
             text = "✦"
-            textSize = 54f
+            textSize = 44f
             gravity = Gravity.CENTER
             setTextColor(white)
             background = android.graphics.drawable.GradientDrawable(
@@ -135,74 +145,80 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 shape = android.graphics.drawable.GradientDrawable.OVAL
                 setStroke(2, 0xFFB6ADFF.toInt())
             }
-            elevation = 12f
         }
         val orbWrap = LinearLayout(this).apply {
             gravity = Gravity.CENTER
-            setPadding(0, 22, 0, 18)
-            addView(orb, LinearLayout.LayoutParams(116, 116))
+            setPadding(0, 14, 0, 14)
+            addView(orb, LinearLayout.LayoutParams(88, 88))
         }
+        content.addView(orbWrap)
 
         conversationView = TextView(this).apply {
             text = "Здесь появится наша беседа.\n\nМожешь спросить меня о чём угодно."
             textSize = 15f
             setTextColor(white)
-            setLineSpacing(5f, 1f)
-            setPadding(18, 18, 18, 18)
+            setLineSpacing(4f, 1f)
+            setPadding(16, 16, 16, 16)
         }
-        val scroll = ScrollView(this).apply {
-            background = rounded(panel, 22f)
+        val conversationPanel = ScrollView(this).apply {
+            background = rounded(panel, 20f)
             clipToOutline = true
             addView(conversationView)
         }
+        content.addView(conversationPanel, LinearLayout.LayoutParams(-1, 220))
 
-        val settingsButton = Button(this).apply {
-            text = "Настройки Gemini"
-            isAllCaps = false
-            textSize = 14f
-            setTextColor(0xFFDCD8FF.toInt())
-            background = rounded(0xFF252344.toInt(), 18f)
-            setOnClickListener { showApiKeyDialog() }
+        val scroll = ScrollView(this).apply {
+            isFillViewport = true
+            addView(content)
         }
+        root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
+
         talkButton = Button(this).apply {
-            text = "🎙  Включить Quiet"
-            textSize = 17f
+            text = "🎙  Говорить"
+            textSize = 16f
             isAllCaps = false
             setTextColor(white)
-            background = rounded(accent, 22f)
+            background = rounded(accent, 20f)
+            setOnClickListener {
+                if (isListening) stopListening() else startListening()
+            }
+        }
+        root.addView(talkButton, LinearLayout.LayoutParams(-1, 54).apply {
+            bottomMargin = 7
+        })
+
+        wakeButton = Button(this).apply {
+            text = "◉  Фоновое пробуждение: выкл."
+            textSize = 13f
+            isAllCaps = false
+            setTextColor(0xFFDCD8FF.toInt())
+            background = rounded(0xFF252344.toInt(), 18f)
             setOnClickListener {
                 if (wakeMode) {
                     stopService(Intent(this@MainActivity, WakeWordService::class.java))
                     wakeMode = false
-                    talkButton.text = "🎙  Включить Quiet"
+                    wakeButton.text = "◉  Фоновое пробуждение: выкл."
                     status.text = "Фоновое пробуждение выключено"
                 } else if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
                     requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 101)
                 } else {
                     wakeMode = true
                     startForegroundService(Intent(this@MainActivity, WakeWordService::class.java))
-                    talkButton.text = "⏹  Выключить Quiet"
-                    status.text = "Quiet ждёт ключевое слово в фоне"
+                    wakeButton.text = "⏹  Выключить фоновый режим"
+                    status.text = "Quiet ожидает ключевое слово. Скажи «Quiet»."
                 }
             }
         }
-
-        root.addView(top)
-        root.addView(greeting)
-        root.addView(hint)
-        root.addView(status)
-        root.addView(orbWrap)
-        root.addView(
-            scroll,
-            LinearLayout.LayoutParams(-1, 0, 1f).apply {
-                bottomMargin = 16
-            }
-        )
-        root.addView(
-            talkButton,
-            LinearLayout.LayoutParams(-1, 58).apply { bottomMargin = 10 }
-        )
-        root.addView(settingsButton, LinearLayout.LayoutParams(-1, 48))
+        root.addView(wakeButton, LinearLayout.LayoutParams(-1, 48))
+        val settingsButton = Button(this).apply {
+            text = "Настройки Gemini"
+            isAllCaps = false
+            textSize = 12f
+            setTextColor(muted)
+            background = android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT)
+            setOnClickListener { showApiKeyDialog() }
+        }
+        root.addView(settingsButton, LinearLayout.LayoutParams(-1, 38))
         setContentView(root)
     }
 
@@ -274,7 +290,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 override fun onReadyForSpeech(params: Bundle?) {
                     isListening = true
                     status.text = "Слушаю тебя..."
-                    talkButton.text = "Остановить"
+                    talkButton.text = "⏹  Остановить"
                 }
 
                 override fun onBeginningOfSpeech() {
@@ -286,7 +302,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
                 override fun onEndOfSpeech() {
                     isListening = false
-                    talkButton.text = "Поговорить"
+                    talkButton.text = "🎙  Говорить"
                     status.text = "Думаю над ответом..."
                 }
 
@@ -333,6 +349,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     }
 
     private fun startListening() {
+        if (isListening) return
         if (apiKey.isBlank()) {
             showApiKeyDialog()
             return
@@ -469,7 +486,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private fun requestGemini(question: String): String {
         val url = URL(
             "https://generativelanguage.googleapis.com/v1beta/" +
-                "models/gemini-3.8-flash:generateContent"
+                "models/gemini-2.5-flash:generateContent"
         )
 
         val connection = url.openConnection() as HttpURLConnection
