@@ -12,6 +12,7 @@
         <package android:name="com.google.android.youtube" />
         <package android:name="org.telegram.messenger" />
         <package android:name="com.whatsapp" />
+        <package android:name="com.whatsapp.w4b" />
         <package android:name="com.instagram.android" />
         <package android:name="com.zhiliaoapp.musically" />
         <package android:name="com.android.chrome" />
