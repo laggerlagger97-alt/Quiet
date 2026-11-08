@@ -167,7 +167,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         }
         val chatScroll = ScrollView(this).apply {
             isFillViewport = true
-            addView(conversationView, ScrollView.LayoutParams(-1, -2))
+            addView(conversationView, android.widget.FrameLayout.LayoutParams(-1, -2))
         }
         root.addView(chatScroll, LinearLayout.LayoutParams(-1, 0, 1f).apply {
             topMargin = dp(1)
