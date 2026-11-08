@@ -103,8 +103,25 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             setPadding(dp(10), dp(5), dp(10), dp(5))
             background = rounded(0xFF252344.toInt(), 30f)
         }
-        top.addView(brand, LinearLayout.LayoutParams(0, dp(38), 1f))
+        val settingsButton = Button(this).apply {
+            text = "⚙"
+            contentDescription = "Настройки ИИ"
+            isAllCaps = false
+            textSize = 18f
+            minWidth = dp(42)
+            minimumWidth = dp(42)
+            minHeight = 0
+            minimumHeight = 0
+            setPadding(0, 0, 0, 0)
+            setTextColor(white)
+            background = rounded(0xFF252344.toInt(), 14f)
+            setOnClickListener { showApiKeyDialog() }
+        }
+        top.addView(brand, LinearLayout.LayoutParams(0, dp(42), 1f))
         top.addView(live)
+        top.addView(settingsButton, LinearLayout.LayoutParams(dp(42), dp(38)).apply {
+            leftMargin = dp(8)
+        })
         root.addView(top)
 
         val greeting = TextView(this).apply {
@@ -220,17 +237,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             bottomMargin = dp(2)
         })
 
-        val settingsButton = Button(this).apply {
-            text = "Настройки ИИ"
-            isAllCaps = false
-            textSize = 11f
-            minHeight = 0
-            minimumHeight = 0
-            setTextColor(muted)
-            background = android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT)
-            setOnClickListener { showApiKeyDialog() }
-        }
-        root.addView(settingsButton, LinearLayout.LayoutParams(-1, dp(24)))
         setContentView(root)
     }
 
@@ -468,7 +474,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             val apps = listOf(
                 Triple(listOf("youtube", "ютуб", "ю туб", "ютубчик"), "com.google.android.youtube", "YouTube"),
                 Triple(listOf("telegram", "телеграм", "телеграмм", "телегу"), "org.telegram.messenger", "Telegram"),
-                Triple(listOf("whatsapp business", "ватсап бизнес", "вотсап бизнес", "вацап бизнес"), "com.whatsapp.w4b", "WhatsApp Business"),
+                Triple(listOf("whatsapp business", "whatsappbusiness", "ватсап бизнес", "ватсапбизнес", "вотсап бизнес", "вотсапбизнес", "вацап бизнес", "вацапбизнес", "бизнес ватсап"), "com.whatsapp.w4b", "WhatsApp Business"),
                 Triple(listOf("whatsapp", "ватсап", "вотсап", "вацап"), "com.whatsapp", "WhatsApp"),
                 Triple(listOf("instagram", "инстаграм", "инсту"), "com.instagram.android", "Instagram"),
                 Triple(listOf("tiktok", "тикток"), "com.zhiliaoapp.musically", "TikTok"),
@@ -485,7 +491,8 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             if (app != null) {
                 return try {
                     val intent = when (app.second) {
-                        "com.whatsapp.w4b" -> packageManager.getLaunchIntentForPackage("com.whatsapp.w4b")
+                        "com.whatsapp.w4b" -> (packageManager.getLaunchIntentForPackage("com.whatsapp.w4b")
+                            ?: Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER).setPackage("com.whatsapp.w4b"))
                             ?: return "WhatsApp Business не найден. Проверь, что он установлен."
                         "settings" -> Intent(android.provider.Settings.ACTION_SETTINGS)
                         "camera" -> Intent("android.media.action.IMAGE_CAPTURE")
@@ -623,7 +630,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             }
             messages.put(JSONObject().put("role", "user").put("content", question))
             val body = JSONObject()
-                .put("model", "openrouter/free")
+                .put("model", "openrouter/free:online")
                 .put("messages", messages)
                 .put("max_tokens", 500)
             connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
@@ -649,7 +656,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     }
 
     private fun requestGemini(question: String): String {
-        val models = listOf("gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash")
+        val models = listOf("gemini-2.5-flash", "gemini-2.0-flash")
         var lastError: Exception? = null
 
         // Bound network retries so a failed request does not keep the user waiting.
