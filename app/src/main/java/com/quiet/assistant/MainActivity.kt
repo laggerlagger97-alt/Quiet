@@ -321,8 +321,12 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 override fun onResults(results: Bundle?) {
                     isListening = false
                     talkButton.text = "🎙  Говорить"
-                    val choices = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                    val phrase = choices?.maxByOrNull { it.length }?.trim().orEmpty()
+                    val choices = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION).orEmpty()
+                    val scores = results?.getFloatArray(SpeechRecognizer.CONFIDENCE_SCORES)
+                    val bestIndex = if (scores != null && scores.size == choices.size) {
+                        scores.indices.maxByOrNull { scores[it] } ?: 0
+                    } else 0
+                    val phrase = choices.getOrNull(bestIndex)?.trim().orEmpty()
                     if (phrase.isNotBlank()) askGemini(phrase)
                     else status.text = "Не расслышал. Попробуй ещё раз."
                 }
@@ -366,6 +370,12 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
             putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, false)
+            if (android.os.Build.VERSION.SDK_INT >= 33) {
+                putStringArrayListExtra(
+                    RecognizerIntent.EXTRA_BIASING_STRINGS,
+                    arrayListOf("Quiet", "Квайет", "Квайт", "арбузы", "сколько стоит")
+                )
+            }
             putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1800L)
             putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 1200L)
         }
