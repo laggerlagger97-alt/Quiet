@@ -24,3 +24,8 @@ android {
         jvmTarget = "17"
     }
 }
+
+dependencies {
+    implementation("com.alphacephei:vosk-android:0.3.75@aar")
+    implementation("net.java.dev.jna:jna:5.18.1@aar")
+}
