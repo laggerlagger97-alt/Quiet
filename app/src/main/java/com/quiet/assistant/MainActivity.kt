@@ -288,57 +288,43 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             return
         }
 
+        speechRecognizer?.destroy()
         speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this).apply {
             setRecognitionListener(object : RecognitionListener {
-
                 override fun onReadyForSpeech(params: Bundle?) {
                     isListening = true
                     status.text = "Слушаю тебя..."
                     talkButton.text = "⏹  Остановить"
                 }
-
-                override fun onBeginningOfSpeech() {
-                    status.text = "Говори..."
-                }
-
+                override fun onBeginningOfSpeech() { status.text = "Говори..." }
                 override fun onRmsChanged(rmsdB: Float) {}
                 override fun onBufferReceived(buffer: ByteArray?) {}
-
                 override fun onEndOfSpeech() {
                     isListening = false
                     talkButton.text = "🎙  Говорить"
-                    status.text = "Думаю над ответом..."
+                    status.text = "Распознаю речь..."
                 }
-
                 override fun onError(error: Int) {
                     isListening = false
-                    talkButton.text = "Поговорить"
+                    talkButton.text = "🎙  Говорить"
                     status.text = when (error) {
                         SpeechRecognizer.ERROR_NO_MATCH,
-                        SpeechRecognizer.ERROR_SPEECH_TIMEOUT ->
-                            "Не расслышал. Попробуй ещё раз."
-                        SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS ->
-                            "Нет разрешения на микрофон."
-                        else -> "Ошибка распознавания. Попробуй ещё раз."
+                        SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "Не расслышал речь. Попробуй говорить чуть ближе к микрофону."
+                        SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "Нет разрешения на микрофон."
+                        SpeechRecognizer.ERROR_NETWORK,
+                        SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "Проблема с интернетом или службой распознавания речи."
+                        SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "Распознавание занято. Нажми «Говорить» ещё раз."
+                        else -> "Ошибка распознавания ($error). Попробуй ещё раз."
                     }
                 }
-
                 override fun onResults(results: Bundle?) {
                     isListening = false
-                    talkButton.text = "Поговорить"
-
-                    val phrase = results
-                        ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                        ?.firstOrNull()
-                        .orEmpty()
-
-                    if (phrase.isNotBlank()) {
-                        askGemini(phrase)
-                    } else {
-                        status.text = "Не расслышал. Попробуй ещё раз."
-                    }
+                    talkButton.text = "🎙  Говорить"
+                    val choices = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                    val phrase = choices?.maxByOrNull { it.length }?.trim().orEmpty()
+                    if (phrase.isNotBlank()) askGemini(phrase)
+                    else status.text = "Не расслышал. Попробуй ещё раз."
                 }
-
                 override fun onPartialResults(partialResults: Bundle?) {}
                 override fun onEvent(eventType: Int, params: Bundle?) {}
             })
@@ -375,8 +361,12 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
             )
             putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ru-RU")
-            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
-            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "ru-RU")
+            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
+            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+            putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, false)
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1800L)
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 1200L)
         }
 
         try {
