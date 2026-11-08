@@ -420,18 +420,29 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             }
 
             val json = JSONObject(responseText)
-            val parts = json.getJSONArray("candidates")
-                .getJSONObject(0)
-                .getJSONObject("content")
-                .getJSONArray("parts")
+            val candidates = json.optJSONArray("candidates")
+                ?: throw Exception(
+                    json.optJSONObject("promptFeedback")
+                        ?.optString("blockReason")
+                        ?.takeIf { !it.isNullOrBlank() }
+                        ?.let { "Запрос заблокирован: $it" }
+                        ?: "Сервис не вернул ответ. Попробуй изменить вопрос."
+                )
+            if (candidates.length() == 0) {
+                throw Exception("Gemini не вернул вариантов ответа. Попробуй ещё раз.")
+            }
+
+            val content = candidates.optJSONObject(0)?.optJSONObject("content")
+            val parts = content?.optJSONArray("parts")
+                ?: throw Exception("В ответе Gemini нет текста. Попробуй ещё раз.")
 
             val answer = StringBuilder()
             for (i in 0 until parts.length()) {
-                answer.append(parts.getJSONObject(i).optString("text", ""))
+                answer.append(parts.optJSONObject(i)?.optString("text", "").orEmpty())
             }
 
             return answer.toString().trim().ifBlank {
-                "Не получилось сформировать ответ. Попробуй ещё раз."
+                "Gemini вернул пустой ответ. Попробуй задать вопрос иначе."
             }
         } finally {
             connection.disconnect()
