@@ -396,6 +396,14 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     }
 
     private fun askGemini(question: String) {
+        val localAction = executeLocalCommand(question)
+        if (localAction != null) {
+            conversationView.append("\n\nТы: $question\nQuiet: $localAction\n")
+            status.text = "Готов слушать дальше."
+            tts?.speak(localAction, TextToSpeech.QUEUE_FLUSH, null, "quiet_action")
+            return
+        }
+
         if (apiKey.isBlank()) {
             showApiKeyDialog()
             return
@@ -431,6 +439,70 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 }
             }
         }
+    }
+
+    // Explicit phone actions run locally and do not wait for Gemini.
+    private fun executeLocalCommand(raw: String): String? {
+        val q = raw.lowercase(Locale("ru", "RU")).replace("ё", "е").trim()
+        val prefixes = listOf("открой ", "запусти ", "включи ", "перейди в ")
+        val prefix = prefixes.firstOrNull { q.startsWith(it) }
+        if (prefix != null) {
+            val target = q.removePrefix(prefix).trim()
+            val apps = listOf(
+                Triple(listOf("youtube", "ютуб", "ю туб"), "com.google.android.youtube", "YouTube"),
+                Triple(listOf("telegram", "телеграм", "телеграмм"), "org.telegram.messenger", "Telegram"),
+                Triple(listOf("whatsapp", "ватсап", "вотсап"), "com.whatsapp", "WhatsApp"),
+                Triple(listOf("instagram", "инстаграм"), "com.instagram.android", "Instagram"),
+                Triple(listOf("tiktok", "тикток"), "com.zhiliaoapp.musically", "TikTok"),
+                Triple(listOf("chrome", "хром", "браузер", "интернет"), "com.android.chrome", "браузер"),
+                Triple(listOf("карты", "google maps", "гугл карты"), "com.google.android.apps.maps", "Карты"),
+                Triple(listOf("gmail", "почту", "почта"), "com.google.android.gm", "Gmail"),
+                Triple(listOf("камеру", "камера"), "camera", "Камера"),
+                Triple(listOf("настройки", "настройки телефона"), "settings", "Настройки"),
+                Triple(listOf("калькулятор"), "calculator", "Калькулятор")
+            )
+            val app = apps.firstOrNull { a -> a.first.any { target == it || target.contains(it) } }
+            if (app != null) {
+                return try {
+                    val intent = when (app.second) {
+                        "settings" -> Intent(android.provider.Settings.ACTION_SETTINGS)
+                        "camera" -> Intent("android.media.action.IMAGE_CAPTURE")
+                        "calculator" -> packageManager.getLaunchIntentForPackage("com.google.android.calculator")
+                            ?: packageManager.getLaunchIntentForPackage("com.miui.calculator")
+                        else -> packageManager.getLaunchIntentForPackage(app.second)
+                    } ?: return "Приложение ${app.third} не найдено на телефоне."
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    startActivity(intent)
+                    "Открываю ${app.third}."
+                } catch (_: Exception) { "Не удалось открыть ${app.third}." }
+            }
+        }
+
+        if (q.startsWith("открой настройки wi-fi") || q.startsWith("открой wifi") ||
+            q.startsWith("открой вайфай")) {
+            return try {
+                startActivity(Intent(android.provider.Settings.ACTION_WIFI_SETTINGS))
+                "Открываю настройки Wi-Fi."
+            } catch (_: Exception) { "Не удалось открыть настройки Wi-Fi." }
+        }
+        if (q.startsWith("открой bluetooth") || q.startsWith("открой блютуз")) {
+            return try {
+                startActivity(Intent(android.provider.Settings.ACTION_BLUETOOTH_SETTINGS))
+                "Открываю настройки Bluetooth."
+            } catch (_: Exception) { "Не удалось открыть настройки Bluetooth." }
+        }
+        val searchPrefix = listOf("найди в интернете ", "поищи в интернете ", "загугли ")
+            .firstOrNull { q.startsWith(it) }
+        if (searchPrefix != null) {
+            val query = q.removePrefix(searchPrefix).trim()
+            if (query.isNotBlank()) {
+                startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(
+                    "https://www.google.com/search?q=" + java.net.URLEncoder.encode(query, "UTF-8")
+                )))
+                return "Ищу в интернете: $query."
+            }
+        }
+        return null
     }
 
     private fun speakNeural(text: String) {
