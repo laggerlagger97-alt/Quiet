@@ -492,30 +492,23 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         val models = listOf("gemini-3.8-flash", "gemini-3.5-flash")
         var lastError: Exception? = null
 
-        for ((modelIndex, model) in models.withIndex()) {
-            val attempts = 2
-            for (attempt in 0 until attempts) {
-                try {
-                    return requestGeminiWithModel(question, model)
-                } catch (e: Exception) {
-                    lastError = e
-                    val message = e.message.orEmpty().lowercase(Locale.ROOT)
-                    val temporary = e is SocketTimeoutException || message.contains("timeout") ||
-                        message.contains("high demand") ||
-                        message.contains("overloaded") ||
-                        message.contains("unavailable") ||
-                        message.contains("temporarily") ||
-                        message.contains("try again") ||
-                        message.contains("http 429") ||
-                        message.contains("http 500") ||
-                        message.contains("http 502") ||
-                        message.contains("http 503") ||
-                        message.contains("http 504")
-                    if (!temporary) throw e
-                    if (attempt < attempts - 1) {
-                        Thread.sleep(1200L * (attempt + 1))
-                    }
-                }
+        // Bound network retries so a failed request does not keep the user waiting.
+        for (model in models) {
+            try {
+                return requestGeminiWithModel(question, model)
+            } catch (e: Exception) {
+                lastError = e
+                val message = e.message.orEmpty().lowercase(Locale.ROOT)
+                val canTryFallback = message.contains("http 404") ||
+                    message.contains("not found") ||
+                    message.contains("high demand") ||
+                    message.contains("overloaded") ||
+                    message.contains("http 429") ||
+                    message.contains("http 500") ||
+                    message.contains("http 502") ||
+                    message.contains("http 503") ||
+                    message.contains("http 504")
+                if (!canTryFallback) break
             }
         }
 
@@ -542,8 +535,8 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
         try {
             connection.requestMethod = "POST"
-            connection.connectTimeout = 20000
-            connection.readTimeout = 60000
+            connection.connectTimeout = 10000
+            connection.readTimeout = 25000
             connection.doOutput = true
             connection.setRequestProperty("Content-Type", "application/json; charset=UTF-8")
             connection.setRequestProperty("x-goog-api-key", apiKey)
