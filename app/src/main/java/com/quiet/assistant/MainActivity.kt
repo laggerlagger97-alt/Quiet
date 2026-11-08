@@ -10,6 +10,10 @@ import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
+import android.media.AudioAttributes
+import android.media.AudioFormat
+import android.media.AudioTrack
+import android.util.Base64
 import android.text.InputType
 import android.view.Gravity
 import android.view.ViewGroup
@@ -34,6 +38,8 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private var tts: TextToSpeech? = null
     private var speechRecognizer: SpeechRecognizer? = null
     private var isListening = false
+    private var wakeMode = false
+    private var wakeOnly = false
     private var apiKey = ""
 
     private val executor = Executors.newSingleThreadExecutor()
@@ -159,7 +165,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             setOnClickListener { showApiKeyDialog() }
         }
         talkButton = Button(this).apply {
-            text = "🎙  Поговорить"
+            text = "🎙  Включить Quiet"
             textSize = 17f
             isAllCaps = false
             setTextColor(white)
@@ -296,7 +302,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         }
     }
 
-    private fun startListening() {
+    private fun startWakeListening() {\n        if (!wakeMode || isFinishing) return\n        wakeOnly = true\n        status.text = "Quiet активен. Скажи «Quiet»"\n        startListening()\n    }\n\n    private fun startListening() {
         if (apiKey.isBlank()) {
             showApiKeyDialog()
             return
@@ -319,7 +325,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             )
             putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ru-RU")
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
-            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
         }
 
         try {
@@ -375,7 +381,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         }
     }
 
-    private fun requestGemini(question: String): String {
+    private fun speakNeural(text: String) {\n        executor.execute {\n            try {\n                val audio = requestGeminiSpeech(text)\n                val track = AudioTrack.Builder()\n                    .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())\n                    .setAudioFormat(AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_16BIT).setSampleRate(24000).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build())\n                    .setBufferSizeInBytes(audio.size)\n                    .setTransferMode(AudioTrack.MODE_STATIC)\n                    .build()\n                track.write(audio, 0, audio.size)\n                track.play()\n                while (track.playbackHeadPosition < audio.size / 2 && track.playState == AudioTrack.PLAYSTATE_PLAYING) Thread.sleep(40)\n                track.release()\n                runOnUiThread { if (wakeMode) startWakeListening() }\n            } catch (e: Exception) {\n                runOnUiThread {\n                    status.text = "Нейроозвучка недоступна — включаю голос телефона"\n                    tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "quiet_fallback")\n                    if (wakeMode) startWakeListening()\n                }\n            }\n        }\n    }\n\n    private fun requestGeminiSpeech(text: String): ByteArray {\n        val url = URL("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent")\n        val connection = url.openConnection() as HttpURLConnection\n        try {\n            connection.requestMethod = "POST"\n            connection.connectTimeout = 20000\n            connection.readTimeout = 60000\n            connection.doOutput = true\n            connection.setRequestProperty("Content-Type", "application/json; charset=UTF-8")\n            connection.setRequestProperty("x-goog-api-key", apiKey)\n            val body = JSONObject()\n                .put("contents", JSONArray().put(JSONObject().put("parts", JSONArray().put(JSONObject().put("text", "Произнеси естественным, спокойным, дружелюбным женским голосом на русском языке. Текст: $text")))))\n                .put("generationConfig", JSONObject()\n                    .put("responseModalities", JSONArray().put("AUDIO"))\n                    .put("speechConfig", JSONObject().put("voiceConfig", JSONObject().put("prebuiltVoiceConfig", JSONObject().put("voiceName", "Kore")))))\n            connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }\n            val code = connection.responseCode\n            val stream = if (code in 200..299) connection.inputStream else connection.errorStream\n            val response = stream.bufferedReader().use { it.readText() }\n            if (code !in 200..299) throw Exception("Gemini TTS HTTP $code")\n            val parts = JSONObject(response).getJSONArray("candidates").getJSONObject(0).getJSONObject("content").getJSONArray("parts")\n            for (i in 0 until parts.length()) {\n                val inline = parts.getJSONObject(i).optJSONObject("inlineData") ?: continue\n                val data = inline.optString("data")\n                if (data.isNotBlank()) return Base64.decode(data, Base64.DEFAULT)\n            }\n            throw Exception("Gemini не вернул аудио")\n        } finally { connection.disconnect() }\n    }\n\n    private fun requestGemini(question: String): String {
         val url = URL(
             "https://generativelanguage.googleapis.com/v1beta/" +
                 "models/gemini-3.8-flash:generateContent"
@@ -535,7 +541,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
     override fun onInit(statusCode: Int) {
         if (statusCode == TextToSpeech.SUCCESS) {
-            val result = tts?.setLanguage(Locale("ru", "RU"))
+            tts?.setLanguage(Locale("ru", "RU"))\n            tts?.setSpeechRate(0.94f)\n            tts?.setPitch(1.0f)\n            val result = tts?.setLanguage(Locale("ru", "RU"))
             if (result == TextToSpeech.LANG_MISSING_DATA ||
                 result == TextToSpeech.LANG_NOT_SUPPORTED
             ) {
