@@ -1,4 +1,4 @@
-Kotlin
+
 package com.quiet.assistant
 
 import android.app.Activity
