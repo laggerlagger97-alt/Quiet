@@ -131,15 +131,30 @@ class WakeWordService : Service() {
         }
         audioRecord = record
         record.startRecording()
+        if (record.recordingState != AudioRecord.RECORDSTATE_RECORDING) {
+            record.release()
+            audioRecord = null
+            throw IllegalStateException("Microphone did not enter recording state")
+        }
+        updateNotification("Активен — слушаю слово «Квайт»")
+        Log.i("QuietWake", "Microphone recording started; sampleRate=$sampleRate")
+        var lastPartialLogAt = 0L
         while (running && !triggered) {
             val count = record.read(buffer, 0, buffer.size)
+            if (count < 0) throw IllegalStateException("Microphone read failed: $count")
             if (count > 0) {
-                val result = if (recognizer?.acceptWaveForm(buffer, count) == true) {
-                    recognizer?.result
-                } else recognizer?.partialResult
-                val text = JSONObject(result ?: "{}").optString("text")
-                    .ifBlank { JSONObject(result ?: "{}").optString("partial") }
+                val finalResult = recognizer?.acceptWaveForm(buffer, count) == true
+                val json = JSONObject(if (finalResult) recognizer?.result ?: "{}" else recognizer?.partialResult ?: "{}")
+                val text = if (finalResult) json.optString("text") else json.optString("partial")
+                if (text.isNotBlank()) {
+                    val now = System.currentTimeMillis()
+                    if (finalResult || now - lastPartialLogAt >= 1500L) {
+                        Log.d("QuietWake", "${if (finalResult) "final" else "partial"}='$text'")
+                        lastPartialLogAt = now
+                    }
+                }
                 if (isWakePhrase(text)) {
+                    Log.i("QuietWake", "Wake phrase matched: '$text'")
                     triggered = true
                     runOnUiThreadCompat()
                     break
@@ -158,7 +173,10 @@ class WakeWordService : Service() {
             .trim()
         if (normalized.isBlank()) return false
         val words = normalized.split(Regex("\\s+"))
-        val targets = listOf("квайет", "квайт", "квейт", "кваит", "квеет", "кьют", "квиет", "куайт", "куаит", "quiet")
+        val targets = listOf(
+            "квайет", "квайэт", "квайт", "квейт", "кваит", "квеет",
+            "квиет", "квият", "кьют", "куайт", "куаит", "квет", "quiet"
+        )
         return words.any { word ->
             targets.any { target -> word == target || (target.length >= 5 && levenshtein(word, target) <= 1) }
         }
