@@ -65,7 +65,8 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             .getString("openrouter_key", "") ?: ""
         groqKey = getSharedPreferences("quiet_settings", MODE_PRIVATE)
             .getString("groq_key", "") ?: ""
-        responseMode = getSharedPreferences("quiet_settings", MODE_PRIVATE).getString("response_mode", "neural") ?: "neural"
+        responseMode = "neural"
+        getSharedPreferences("quiet_settings", MODE_PRIVATE).edit().putString("response_mode", "neural").apply()
 
         createInterface()
         createSpeechRecognizer()
@@ -678,8 +679,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 runOnUiThread { if (wakeMode) startWakeListening() }
             } catch (e: Exception) {
                 runOnUiThread {
-                    status.text = "Нейроозвучка недоступна — включаю голос телефона"
-                    tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "quiet_fallback")
+                    status.text = "Не удалось получить нейроголос Kore. Проверь Gemini API-ключ и интернет."
                     if (wakeMode) startWakeListening()
                 }
             }
@@ -735,7 +735,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             connection.setRequestProperty("Content-Type", "application/json; charset=UTF-8")
             connection.setRequestProperty("Authorization", "Bearer $groqKey")
             val messages = JSONArray()
-            messages.put(JSONObject().put("role", "system").put("content", "Тебя зовут Quiet. Ты дружелюбный голосовой помощник. Отвечай на русском языке, ясно и естественно."))
+            messages.put(JSONObject().put("role", "system").put("content", "Тебя зовут Quiet. Ты дружелюбный голосовой помощник. Отвечай на русском языке. Для каждого вопроса используй поиск в интернете и только потом формируй ответ. Если веб-поиск недоступен, честно сообщи об этом."))
             for ((oldQuestion, oldAnswer) in history.takeLast(8)) {
                 messages.put(JSONObject().put("role", "user").put("content", oldQuestion))
                 messages.put(JSONObject().put("role", "assistant").put("content", oldAnswer))
@@ -880,9 +880,9 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                     JSONObject().put("text",
                         "Тебя зовут Quiet. Ты дружелюбный голосовой помощник. " +
                             "Отвечай по-русски коротко, прямо и быстро, обычно 1-3 предложения. " +
-                            "Пользователь ожидает актуальный ответ: используй Google Search для проверки фактов, погоды, новостей, цен, расписаний и любых вопросов о текущем положении дел. " +
-                            "Для обычных знаний тоже ищи в интернете, если это помогает дать точный ответ. " +
-                            "Не выдумывай результаты поиска и явно говори, если свежие данные недоступны."
+                            "ОБЯЗАТЕЛЬНО используй Google Search для ответа на каждый вопрос пользователя: найди свежие сведения в интернете, затем кратко перескажи найденное по-русски. " +
+                            "Не отвечай только по памяти, даже если тема кажется знакомой. Если поиск не сработал, прямо сообщи об этом и не выдумывай источники или свежие факты. " +
+                            "Указывай названия сайтов и ссылки из groundingMetadata, если они доступны."
                     )
                 )))
                 .put("contents", contents)
