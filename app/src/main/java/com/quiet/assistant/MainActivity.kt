@@ -803,7 +803,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     }
 
     private fun requestGemini(question: String): String {
-        val models = listOf("gemini-2.5-flash")
+        val models = listOf("gemini-3.8-flash")
         var lastError: Exception? = null
 
         // Bound network retries so a failed request does not keep the user waiting.
