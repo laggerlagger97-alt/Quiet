@@ -718,11 +718,13 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
     private fun requestAssistant(question: String): String {
         val failures = mutableListOf<String>()
-        if (apiKey.isNotBlank()) try { return requestGemini(question) } catch (e: Exception) { failures.add("Gemini: ${e.message}") }
-        if (openRouterKey.isNotBlank()) try { return requestOpenRouter(question) } catch (e: Exception) { failures.add("OpenRouter: ${e.message}") }
-        if (groqKey.isNotBlank()) try { return requestGroq(question) } catch (e: Exception) { failures.add("Groq: ${e.message}") }
-        if (failures.isNotEmpty()) throw Exception(failures.joinToString(" | "))
-        throw Exception("Добавь API-ключ Gemini, OpenRouter или Groq в настройках.")
+        if (apiKey.isNotBlank()) try { return requestGemini(question) } catch (e: Exception) { failures.add("Google Search (Gemini): ${e.message}") }
+        if (openRouterKey.isNotBlank()) try { return requestOpenRouter(question) } catch (e: Exception) { failures.add("OpenRouter Search: ${e.message}") }
+        // Groq's ordinary chat endpoint does not provide web search. Never silently
+        // use it for a question that the user expects to be researched online.
+        if (failures.isNotEmpty()) throw Exception(failures.joinToString(" | ") + ". Веб-поиск не выполнен; проверь Gemini/OpenRouter API-ключи и интернет.")
+        if (groqKey.isNotBlank()) throw Exception("Для поиска в интернете нужен Gemini или OpenRouter с online-поиском. Один Groq-ключ не поддерживает веб-поиск в этой версии.")
+        throw Exception("Добавь Gemini API-ключ или OpenRouter API-ключ с доступом к online-поиску в настройках.")
     }
 
     private fun requestGroq(question: String): String {
@@ -880,13 +882,13 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                     JSONObject().put("text",
                         "Тебя зовут Quiet. Ты дружелюбный голосовой помощник. " +
                             "Отвечай по-русски коротко, прямо и быстро, обычно 1-3 предложения. " +
-                            "ОБЯЗАТЕЛЬНО используй Google Search для ответа на каждый вопрос пользователя: найди свежие сведения в интернете, затем кратко перескажи найденное по-русски. " +
-                            "Не отвечай только по памяти, даже если тема кажется знакомой. Если поиск не сработал, прямо сообщи об этом и не выдумывай источники или свежие факты. " +
-                            "Указывай названия сайтов и ссылки из groundingMetadata, если они доступны."
+                            "ОБЯЗАТЕЛЬНО вызови инструмент Google Search для КАЖДОГО вопроса пользователя, включая общеизвестные темы. Сначала выполни реальный поиск в интернете, затем ответь по найденным страницам. " +
+                            "Не заменяй поиск знаниями из памяти. Если Google Search не был выполнен или не вернул веб-источники, не отвечай по памяти: сообщи, что поиск сейчас недоступен, и попроси повторить позже. " +
+                            "В конце ответа добавь названия найденных сайтов и прямые ссылки из groundingMetadata.groundingChunks."
                     )
                 )))
                 .put("contents", contents)
-                // Gemini decides when live Google Search is useful, then grounds its answer.
+                // Explicitly attach Google Search to every Gemini generation request.
                 .put("tools", JSONArray().put(JSONObject().put("google_search", JSONObject())))
                 .put("generationConfig", JSONObject()
                     .put("temperature", 0.7)
