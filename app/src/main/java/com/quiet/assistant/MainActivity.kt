@@ -241,8 +241,8 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
         val textRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         textInput = EditText(this).apply {
-            hint = "Напиши вопрос…"; textSize = 14f; setTextColor(white); setHintTextColor(muted)
-            singleLine = true; setPadding(dp(12), 0, dp(12), 0); background = rounded(panel, 16f)
+            this.hint = "Напиши вопрос…"; textSize = 14f; setTextColor(white); setHintTextColor(muted)
+            setSingleLine(true); setPadding(dp(12), 0, dp(12), 0); background = rounded(panel, 16f)
             imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_SEND
             setOnEditorActionListener { _, actionId, _ -> if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_SEND) { submitTextQuestion(); true } else false }
         }
