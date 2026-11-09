@@ -844,8 +844,14 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             if (grantResults.isNotEmpty() &&
                 grantResults[0] == PackageManager.PERMISSION_GRANTED
             ) {
-                startListening()
+                // Permission was requested from the background-wake button:
+                // start the foreground wake service, not one-shot speech input.
+                wakeMode = true
+                startForegroundService(Intent(this, WakeWordService::class.java))
+                wakeButton.text = "⏹  Выключить фоновый режим"
+                status.text = "Запускаю фоновое пробуждение…"
             } else {
+                wakeMode = false
                 status.text = "Разреши Quiet использовать микрофон."
             }
         }
