@@ -178,7 +178,11 @@ class WakeWordService : Service() {
             "квиет", "квият", "кьют", "куайт", "куаит", "квет", "quiet"
         )
         return words.any { word ->
-            targets.any { target -> word == target || (target.length >= 5 && levenshtein(word, target) <= 1) }
+            targets.any { target ->
+                word == target ||
+                    (word.length >= 4 && target.startsWith(word)) ||
+                    (word.length >= 5 && levenshtein(word, target) <= 2)
+            }
         }
     }
 
