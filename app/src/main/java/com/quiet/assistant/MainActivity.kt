@@ -36,6 +36,9 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private lateinit var conversationView: TextView
     private lateinit var talkButton: Button
     private lateinit var wakeButton: Button
+    private lateinit var textInput: EditText
+    private var responseMode = "voice"
+    @Volatile private var requestVersion = 0
 
     private var tts: TextToSpeech? = null
     private var speechRecognizer: SpeechRecognizer? = null
@@ -46,7 +49,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private var openRouterKey = ""
     private var groqKey = ""
 
-    private val executor = Executors.newSingleThreadExecutor()
+    private val executor = Executors.newCachedThreadPool()
     private val history = mutableListOf<Pair<String, String>>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -59,6 +62,8 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             .getString("openrouter_key", "") ?: ""
         groqKey = getSharedPreferences("quiet_settings", MODE_PRIVATE)
             .getString("groq_key", "") ?: ""
+        responseMode = getSharedPreferences("quiet_settings", MODE_PRIVATE)
+            .getString("response_mode", "voice") ?: "voice"
 
         createInterface()
         createSpeechRecognizer()
@@ -119,7 +124,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             setPadding(0, 0, 0, 0)
             setTextColor(white)
             background = rounded(0xFF252344.toInt(), 14f)
-            setOnClickListener { showApiKeyDialog() }
+            setOnClickListener { showSettingsDialog() }
         }
         top.addView(brand, LinearLayout.LayoutParams(0, dp(42), 1f))
         top.addView(live)
@@ -195,6 +200,18 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             bottomMargin = dp(3)
         })
 
+        val textRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        textInput = EditText(this).apply {
+            hint = "Напиши вопрос…"; textSize = 14f; setTextColor(white); setHintTextColor(muted)
+            singleLine = true; setPadding(dp(12), 0, dp(12), 0); background = rounded(panel, 16f)
+            imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_SEND
+            setOnEditorActionListener { _, actionId, _ -> if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_SEND) { submitTextQuestion(); true } else false }
+        }
+        val sendButton = Button(this).apply { text = "➤"; isAllCaps = false; setTextColor(white); background = rounded(accent, 16f); setOnClickListener { submitTextQuestion() } }
+        textRow.addView(textInput, LinearLayout.LayoutParams(0, dp(44), 1f))
+        textRow.addView(sendButton, LinearLayout.LayoutParams(dp(52), dp(44)).apply { leftMargin = dp(6) })
+        root.addView(textRow, LinearLayout.LayoutParams(-1, dp(46)).apply { bottomMargin = dp(5) })
+
         talkButton = Button(this).apply {
             text = "🎙  Говорить"
             textSize = 15f
@@ -242,6 +259,30 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         })
 
         setContentView(root)
+    }
+
+    private fun showSettingsDialog() {
+        val choices = arrayOf("Голосом", "Только текстом")
+        AlertDialog.Builder(this).setTitle("Как отвечать Quiet?")
+            .setSingleChoiceItems(choices, if (responseMode == "voice") 0 else 1) { dialog, which ->
+                responseMode = if (which == 0) "voice" else "text"
+                getSharedPreferences("quiet_settings", MODE_PRIVATE).edit().putString("response_mode", responseMode).apply()
+                status.text = if (responseMode == "voice") "Ответы будут озвучиваться" else "Ответы будут показываться текстом"
+                dialog.dismiss()
+            }.setNeutralButton("API-ключи") { _, _ -> showApiKeyDialog() }.setNegativeButton("Закрыть", null).show()
+    }
+
+    private fun submitTextQuestion() {
+        val question = textInput.text.toString().trim()
+        if (question.isBlank()) return
+        textInput.setText("")
+        stopAnswerPlayback()
+        askGemini(question)
+    }
+
+    private fun stopAnswerPlayback() {
+        requestVersion++
+        try { tts?.stop() } catch (_: Exception) {}
     }
 
     private fun showApiKeyDialog() {
@@ -363,7 +404,10 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                     } else 0
                     val phrase = choices.getOrNull(bestIndex)?.trim().orEmpty()
                     if (phrase.isNotBlank()) askGemini(phrase)
-                    else status.text = "Не расслышал. Попробуй ещё раз."
+                    else {
+                        status.text = "Не расслышал. Скажи «Квайт» ещё раз."
+                        if (wakeMode) android.os.Handler(mainLooper).postDelayed({ startWakeListening() }, 900)
+                    }
                 }
                 override fun onPartialResults(partialResults: Bundle?) {}
                 override fun onEvent(eventType: Int, params: Bundle?) {}
@@ -438,8 +482,8 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     }
 
     private fun speakAnswer(text: String) {
-        if (apiKey.isNotBlank()) speakNeural(text)
-        else tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "quiet_answer")
+        if (responseMode == "text") return
+        tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "quiet_answer")
     }
 
     private fun askGemini(question: String) {
@@ -456,6 +500,8 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             return
         }
 
+        stopAnswerPlayback()
+        val thisRequest = requestVersion
         status.text = "Quiet думает..."
         appendChat("\n\nТы: $question\n")
 
@@ -464,6 +510,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 val answer = requestAssistant(question)
 
                 runOnUiThread {
+                    if (thisRequest != requestVersion) return@runOnUiThread
                     history.add(question to answer)
                     while (history.size > 8) {
                         history.removeAt(0)
@@ -476,6 +523,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 }
             } catch (e: Exception) {
                 runOnUiThread {
+                    if (thisRequest != requestVersion) return@runOnUiThread
                     status.text = "Не удалось получить ответ: ${e.message ?: "ошибка сети"}"
                     appendChat("\nОшибка: ${e.message}\n")
                 }
@@ -696,7 +744,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     }
 
     private fun requestGemini(question: String): String {
-        val models = listOf("gemini-3.8-flash")
+        val models = listOf("gemini-2.5-flash")
         var lastError: Exception? = null
 
         // Bound network retries so a failed request does not keep the user waiting.
