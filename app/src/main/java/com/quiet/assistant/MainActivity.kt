@@ -37,7 +37,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private lateinit var talkButton: Button
     private lateinit var wakeButton: Button
     private lateinit var textInput: EditText
-    private var responseMode = "voice"
+    private var responseMode = "neural"
     @Volatile private var requestVersion = 0
 
     private var tts: TextToSpeech? = null
@@ -50,6 +50,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private var groqKey = ""
 
     private val executor = Executors.newCachedThreadPool()
+    private val speechExecutor = Executors.newSingleThreadExecutor()
     private val history = mutableListOf<Pair<String, String>>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -262,12 +263,12 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     }
 
     private fun showSettingsDialog() {
-        val choices = arrayOf("Голосом", "Только текстом")
-        AlertDialog.Builder(this).setTitle("Как отвечать Quiet?")
-            .setSingleChoiceItems(choices, if (responseMode == "voice") 0 else 1) { dialog, which ->
-                responseMode = if (which == 0) "voice" else "text"
+        val choices = arrayOf("Нейроголос", "Быстрый голос телефона", "Только текст")
+        AlertDialog.Builder(this).setTitle("Как Quiet будет отвечать?")
+            .setSingleChoiceItems(choices, when (responseMode) { "neural" -> 0; "voice" -> 1; else -> 2 }) { dialog, which ->
+                responseMode = when (which) { 0 -> "neural"; 1 -> "voice"; else -> "text" }
                 getSharedPreferences("quiet_settings", MODE_PRIVATE).edit().putString("response_mode", responseMode).apply()
-                status.text = if (responseMode == "voice") "Ответы будут озвучиваться" else "Ответы будут показываться текстом"
+                status.text = when (responseMode) { "neural" -> "Выбран нейроголос"; "voice" -> "Выбран быстрый голос телефона"; else -> "Ответы будут только текстом" }
                 dialog.dismiss()
             }.setNeutralButton("API-ключи") { _, _ -> showApiKeyDialog() }.setNegativeButton("Закрыть", null).show()
     }
@@ -482,8 +483,11 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     }
 
     private fun speakAnswer(text: String) {
-        if (responseMode == "text") return
-        tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "quiet_answer")
+        when (responseMode) {
+            "text" -> return
+            "voice" -> tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "quiet_answer")
+            else -> speakNeural(text)
+        }
     }
 
     private fun askGemini(question: String) {
@@ -605,9 +609,9 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     }
 
     private fun speakNeural(text: String) {
-        executor.execute {
+        speechExecutor.execute {
             try {
-                val audio = requestGeminiSpeech(text)
+                val audio = requestGeminiSpeech(text.take(900))
                 val track = AudioTrack.Builder()
                     .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
                     .setAudioFormat(AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_16BIT).setSampleRate(24000).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build())
@@ -634,13 +638,13 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         val connection = url.openConnection() as HttpURLConnection
         try {
             connection.requestMethod = "POST"
-            connection.connectTimeout = 30000
-            connection.readTimeout = 90000
+            connection.connectTimeout = 8000
+            connection.readTimeout = 25000
             connection.doOutput = true
             connection.setRequestProperty("Content-Type", "application/json; charset=UTF-8")
             connection.setRequestProperty("x-goog-api-key", apiKey)
             val body = JSONObject()
-                .put("contents", JSONArray().put(JSONObject().put("parts", JSONArray().put(JSONObject().put("text", "Произнеси естественным, спокойным, дружелюбным женским голосом на русском языке. Текст: $text")))))
+                .put("contents", JSONArray().put(JSONObject().put("parts", JSONArray().put(JSONObject().put("text", "Коротко и естественно произнеси по-русски дружелюбным женским голосом. Не добавляй ничего от себя. $text")))))
                 .put("generationConfig", JSONObject()
                     .put("responseModalities", JSONArray().put("AUDIO"))
                     .put("speechConfig", JSONObject().put("voiceConfig", JSONObject().put("prebuiltVoiceConfig", JSONObject().put("voiceName", "Kore")))))
@@ -822,8 +826,10 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 .put("systemInstruction", JSONObject().put("parts", JSONArray().put(
                     JSONObject().put("text",
                         "Тебя зовут Quiet. Ты дружелюбный голосовой помощник. " +
-                            "Всегда отвечай на русском языке, естественно, понятно и не слишком длинно. " +
-                            "Не повторяй вопрос вместо ответа."
+                            "Отвечай по-русски коротко, прямо и быстро, обычно 1-3 предложения. " +
+                            "Пользователь ожидает актуальный ответ: используй Google Search для проверки фактов, погоды, новостей, цен, расписаний и любых вопросов о текущем положении дел. " +
+                            "Для обычных знаний тоже ищи в интернете, если это помогает дать точный ответ. " +
+                            "Не выдумывай результаты поиска и явно говори, если свежие данные недоступны."
                     )
                 )))
                 .put("contents", contents)
@@ -831,7 +837,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 .put("tools", JSONArray().put(JSONObject().put("google_search", JSONObject())))
                 .put("generationConfig", JSONObject()
                     .put("temperature", 0.7)
-                    .put("maxOutputTokens", 500))
+                    .put("maxOutputTokens", 300))
 
             connection.outputStream.use {
                 it.write(body.toString().toByteArray(Charsets.UTF_8))
@@ -923,6 +929,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         tts?.stop()
         tts?.shutdown()
         executor.shutdownNow()
+        speechExecutor.shutdownNow()
         super.onDestroy()
     }
 }
