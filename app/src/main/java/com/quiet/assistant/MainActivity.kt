@@ -37,6 +37,8 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private lateinit var talkButton: Button
     private lateinit var wakeButton: Button
     private lateinit var textInput: EditText
+    private lateinit var voiceModeButton: Button
+    private lateinit var textModeButton: Button
     private var responseMode = "neural"
     @Volatile private var requestVersion = 0
 
@@ -153,6 +155,42 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         }
         root.addView(hint)
 
+        val modeRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        fun modeButton(label: String, selected: Boolean, onClick: () -> Unit): Button =
+            Button(this).apply {
+                text = label
+                textSize = 12f
+                isAllCaps = false
+                minHeight = 0
+                minimumHeight = 0
+                setPadding(dp(4), 0, dp(4), 0)
+                setTextColor(white)
+                background = rounded(if (selected) accent else panel, 14f)
+                setOnClickListener { onClick() }
+            }
+        voiceModeButton = modeButton("🔊 Голос", responseMode != "text") {
+            responseMode = "neural"
+            saveResponseMode()
+            updateResponseModeButtons(accent, panel)
+            status.text = "Буду отвечать голосом"
+        }
+        textModeButton = modeButton("Текст", responseMode == "text") {
+            responseMode = "text"
+            saveResponseMode()
+            updateResponseModeButtons(accent, panel)
+            status.text = "Буду отвечать текстом"
+        }
+        modeRow.addView(voiceModeButton, LinearLayout.LayoutParams(0, dp(38), 1f))
+        modeRow.addView(textModeButton, LinearLayout.LayoutParams(0, dp(38), 1f).apply {
+            leftMargin = dp(8)
+        })
+        root.addView(modeRow, LinearLayout.LayoutParams(-1, dp(40)).apply {
+            bottomMargin = dp(5)
+        })
+
         status = TextView(this).apply {
             text = "Я рядом. Готов помочь."
             textSize = 12f
@@ -260,6 +298,22 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         })
 
         setContentView(root)
+    }
+
+    private fun saveResponseMode() {
+        getSharedPreferences("quiet_settings", MODE_PRIVATE).edit()
+            .putString("response_mode", responseMode).apply()
+    }
+
+    private fun updateResponseModeButtons(accent: Int, panel: Int) {
+        voiceModeButton.background = android.graphics.drawable.GradientDrawable().apply {
+            setColor(if (responseMode != "text") accent else panel)
+            cornerRadius = 14f * resources.displayMetrics.density
+        }
+        textModeButton.background = android.graphics.drawable.GradientDrawable().apply {
+            setColor(if (responseMode == "text") accent else panel)
+            cornerRadius = 14f * resources.displayMetrics.density
+        }
     }
 
     private fun showSettingsDialog() {
