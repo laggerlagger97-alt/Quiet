@@ -39,7 +39,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private lateinit var textInput: EditText
     private lateinit var voiceModeButton: Button
     private lateinit var textModeButton: Button
-    private var responseMode = "voice"
+    private var responseMode = "neural"
     @Volatile private var requestVersion = 0
 
     private var tts: TextToSpeech? = null
@@ -65,8 +65,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             .getString("openrouter_key", "") ?: ""
         groqKey = getSharedPreferences("quiet_settings", MODE_PRIVATE)
             .getString("groq_key", "") ?: ""
-        responseMode = "voice"
-        getSharedPreferences("quiet_settings", MODE_PRIVATE).edit().putString("response_mode", "voice").apply()
+        responseMode = getSharedPreferences("quiet_settings", MODE_PRIVATE).getString("response_mode", "neural") ?: "neural"
 
         createInterface()
         createSpeechRecognizer()
@@ -171,8 +170,8 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 background = rounded(if (selected) accent else panel, 14f)
                 setOnClickListener { onClick() }
             }
-        voiceModeButton = modeButton("🔊 Голос", responseMode != "text") {
-            responseMode = "voice"
+        voiceModeButton = modeButton("🔊 Нейроголос", responseMode != "text") {
+            responseMode = "neural"
             saveResponseMode()
             updateResponseModeButtons(accent, panel)
             status.text = "Буду отвечать голосом"
@@ -539,7 +538,8 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private fun speakAnswer(text: String) {
         when (responseMode) {
             "text" -> return
-            else -> tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "quiet_answer")
+            "voice" -> tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "quiet_answer")
+            else -> speakNeural(text)
         }
     }
 
